@@ -5,26 +5,38 @@ import { interpolateFills, interpolateStrokes, interpolateOpacity } from './colo
 import { buildCompoundVectorNetwork } from './vector-builder'
 
 export interface BlendInput {
-  nodeA: VectorNode
-  nodeB: VectorNode
+  netA: VectorNetwork
+  netB: VectorNetwork
+  fillsA: readonly Paint[]
+  fillsB: readonly Paint[]
+  strokesA: readonly Paint[]
+  strokesB: readonly Paint[]
+  strokeWeightA: number
+  strokeWeightB: number
+  opacityA: number
+  opacityB: number
+  posA: { x: number; y: number }
+  posB: { x: number; y: number }
   parent: BaseNode & ChildrenMixin
 }
 
-// Main blend function: creates and returns intermediate vector nodes.
-// Grouping is handled by the caller so original selection nodes are preserved.
-export async function blend(input: BlendInput, options: BlendOptions): Promise<VectorNode[]> {
-  const { nodeA, nodeB, parent } = input
+// Creates intermediate vector nodes between A and B.
+// All geometry data is passed explicitly — no temporary document nodes needed.
+export async function blend(
+  input: BlendInput,
+  options: BlendOptions
+): Promise<VectorNode[]> {
+  const {
+    netA, netB,
+    fillsA, fillsB,
+    strokesA, strokesB,
+    strokeWeightA, strokeWeightB,
+    opacityA, opacityB,
+    posA, posB,
+    parent,
+  } = input
   const { steps, colorSpace } = options
 
-  // Read geometry from both nodes
-  const netA = nodeA.vectorNetwork
-  const netB = nodeB.vectorNetwork
-
-  if (!netA || !netB) {
-    throw new Error('One of the selected nodes has no vector network')
-  }
-
-  // Extract loops from both networks
   const loopsA = extractLoops(netA.vertices, netA.segments, netA.regions)
   const loopsB = extractLoops(netB.vertices, netB.segments, netB.regions)
 
@@ -33,7 +45,6 @@ export async function blend(input: BlendInput, options: BlendOptions): Promise<V
   }
 
   // steps = total count including originals (A + intermediates + B)
-  // e.g. steps=5 → 3 intermediates at t=0.25, 0.5, 0.75
   const intermediateCount = Math.max(0, steps - 2)
 
   const results: VectorNode[] = []
@@ -41,62 +52,36 @@ export async function blend(input: BlendInput, options: BlendOptions): Promise<V
   for (let i = 1; i <= intermediateCount; i++) {
     const t = i / (intermediateCount + 1)
 
-    // Normalize and interpolate each loop pair
     const interpolatedLoops = interpolateAllLoops(loopsA, loopsB, t)
 
-    // Build the VectorNetwork
     const net = buildCompoundVectorNetwork(
       interpolatedLoops,
       getWindingRules(netA)
     )
 
-    // Create the vector node and set its geometry (async in dynamic-page mode)
     const vecNode = figma.createVector()
     await vecNode.setVectorNetworkAsync(net)
 
-    // Interpolate position
-    const pos = interpolatePosition(nodeA, nodeB, t)
+    const pos = interpolatePosition(posA, posB, t)
     vecNode.x = pos.x
     vecNode.y = pos.y
 
-    // Interpolate fills
-    const fills = interpolateFills(
-      nodeA.fills as readonly Paint[],
-      nodeB.fills as readonly Paint[],
-      t,
-      colorSpace
-    )
-    if (fills.length > 0) {
-      vecNode.fills = fills
-    }
+    const fills = interpolateFills(fillsA, fillsB, t, colorSpace)
+    if (fills.length > 0) vecNode.fills = fills
 
-    // Interpolate strokes
-    const strokes = interpolateStrokes(
-      nodeA.strokes as readonly Paint[],
-      nodeB.strokes as readonly Paint[],
-      t,
-      colorSpace
-    )
-    if (strokes.length > 0) {
-      vecNode.strokes = strokes
-    }
+    const strokes = interpolateStrokes(strokesA, strokesB, t, colorSpace)
+    if (strokes.length > 0) vecNode.strokes = strokes
 
-    // Interpolate stroke weight
-    vecNode.strokeWeight = (nodeA.strokeWeight as number) + ((nodeB.strokeWeight as number) - (nodeA.strokeWeight as number)) * t
+    vecNode.strokeWeight = strokeWeightA + (strokeWeightB - strokeWeightA) * t
+    vecNode.opacity = interpolateOpacity(opacityA, opacityB, t)
 
-    // Interpolate opacity
-    vecNode.opacity = interpolateOpacity(nodeA.opacity, nodeB.opacity, t)
-
-    // Insert into the page (after nodeB to maintain visual order)
     parent.appendChild(vecNode)
-
     results.push(vecNode)
   }
 
   return results
 }
 
-// Interpolate all loops between two paths
 function interpolateAllLoops(
   loopsA: CubicBezierLoop[],
   loopsB: CubicBezierLoop[],
@@ -113,10 +98,8 @@ function interpolateAllLoops(
     const lb = sortedB[i] ?? emptyLoop()
 
     if (la.segments.length === 0) {
-      // Fade in loop B
       result.push(lb)
     } else if (lb.segments.length === 0) {
-      // Fade out loop A
       result.push(la)
     } else {
       const [normA, normB] = normalizeLoopPair(la, lb)

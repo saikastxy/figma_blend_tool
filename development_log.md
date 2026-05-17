@@ -129,7 +129,29 @@
 - 临时节点清理移到分组之后，并用 try-catch 包裹防止二次删除报错
 - `blend()` 不再返回 `BlendOutput`，改为直接返回 `VectorNode[]`
 
-### 项目仓库信息
+---
+
+## 2026-05-17（续 2）: 移除 figma.flatten()，改为直接构建 VectorNetwork
+
+### Bug 6: `figma.group()` 报 "node does not exist" + 原始图形消失
+
+**现象**: 混合完成后报 `in group: The node with id "513:262" does not exist`，原始图形消失。
+
+**根因**: `ensureVectorNode()` 对非 VECTOR 类型（Rectangle/Ellipse）调用 `figma.flatten()`，这会创建一个临时 VectorNode 插入到文档中。`figma.group()` 在某些情况下无法正确处理这些临时节点和原始节点之间的关系，导致节点引用失效。
+
+**修复方案**: 彻底移除 `figma.flatten()`，改为从形状参数直接构建 VectorNetwork 数据结构：
+- 新增 `extractGeometry()` — 从任何可混合节点提取几何数据（VectorNetwork + fills + strokes + 位置等），不创建额外文档节点
+- 新增 `buildShapeVectorNetwork()` — 从 Rectangle/Ellipse 的参数（width/height）直接构建顶点和线段
+- `rectToVectorNetwork()` — 4 个顶点 + 4 条直线段
+- `ellipseToVectorNetwork()` — 4 个顶点 + 4 条三次贝塞尔曲线（k=0.5522847498 近似圆弧）
+- `blend()` 改为接收 `BlendInput` 原始数据（VectorNetwork、fills、strokes 等），不再依赖 VectorNode
+- `handleBlend()` 中 `figma.group()` 直接使用原始选中节点 `[originalA, ...intermediates, originalB]`
+
+**关键改进**: 整个混合过程中不再向文档插入任何临时节点。中间过渡形直接创建、配置、添加到文档。原始图形完全不受影响。
+
+---
+
+## 项目仓库信息
 
 - **GitHub**: [github.com/saikastxy/figma_blend_tool](https://github.com/saikastxy/figma_blend_tool)
 - **SSH**: `git@github.com:saikastxy/figma_blend_tool.git`

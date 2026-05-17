@@ -510,13 +510,22 @@
 
   // src/blend-engine.ts
   async function blend(input, options) {
-    const { nodeA, nodeB, parent } = input;
+    const {
+      netA,
+      netB,
+      fillsA,
+      fillsB,
+      strokesA,
+      strokesB,
+      strokeWeightA,
+      strokeWeightB,
+      opacityA,
+      opacityB,
+      posA,
+      posB,
+      parent
+    } = input;
     const { steps, colorSpace } = options;
-    const netA = nodeA.vectorNetwork;
-    const netB = nodeB.vectorNetwork;
-    if (!netA || !netB) {
-      throw new Error("One of the selected nodes has no vector network");
-    }
     const loopsA = extractLoops(netA.vertices, netA.segments, netA.regions);
     const loopsB = extractLoops(netB.vertices, netB.segments, netB.regions);
     if (loopsA.length === 0 || loopsB.length === 0) {
@@ -533,29 +542,15 @@
       );
       const vecNode = figma.createVector();
       await vecNode.setVectorNetworkAsync(net);
-      const pos = interpolatePosition(nodeA, nodeB, t);
+      const pos = interpolatePosition(posA, posB, t);
       vecNode.x = pos.x;
       vecNode.y = pos.y;
-      const fills = interpolateFills(
-        nodeA.fills,
-        nodeB.fills,
-        t,
-        colorSpace
-      );
-      if (fills.length > 0) {
-        vecNode.fills = fills;
-      }
-      const strokes = interpolateStrokes(
-        nodeA.strokes,
-        nodeB.strokes,
-        t,
-        colorSpace
-      );
-      if (strokes.length > 0) {
-        vecNode.strokes = strokes;
-      }
-      vecNode.strokeWeight = nodeA.strokeWeight + (nodeB.strokeWeight - nodeA.strokeWeight) * t;
-      vecNode.opacity = interpolateOpacity(nodeA.opacity, nodeB.opacity, t);
+      const fills = interpolateFills(fillsA, fillsB, t, colorSpace);
+      if (fills.length > 0) vecNode.fills = fills;
+      const strokes = interpolateStrokes(strokesA, strokesB, t, colorSpace);
+      if (strokes.length > 0) vecNode.strokes = strokes;
+      vecNode.strokeWeight = strokeWeightA + (strokeWeightB - strokeWeightA) * t;
+      vecNode.opacity = interpolateOpacity(opacityA, opacityB, t);
       parent.appendChild(vecNode);
       results.push(vecNode);
     }
@@ -593,10 +588,7 @@
   var BLENDABLE_TYPES = /* @__PURE__ */ new Set([
     "VECTOR",
     "RECTANGLE",
-    "ELLIPSE",
-    "POLYGON",
-    "STAR",
-    "LINE"
+    "ELLIPSE"
   ]);
   figma.showUI(__html__, {
     width: 320,
@@ -629,19 +621,95 @@
     const types = sel.map((n) => n.type);
     const allBlendable = types.every((t) => BLENDABLE_TYPES.has(t));
     if (!allBlendable) {
-      post({ type: "SELECTION", count: 2, valid: false, message: `\u4E0D\u652F\u6301\u7684\u56FE\u5F62\u7C7B\u578B\uFF08${types.join(", ")}\uFF09\u3002\u652F\u6301\uFF1A\u77E9\u5F62\u3001\u692D\u5706\u3001\u591A\u8FB9\u5F62\u3001\u661F\u5F62\u3001\u76F4\u7EBF\u3001\u77E2\u91CF` });
+      post({ type: "SELECTION", count: 2, valid: false, message: `\u4E0D\u652F\u6301\u7684\u56FE\u5F62\u7C7B\u578B\uFF08${types.join(", ")}\uFF09\u3002\u652F\u6301\uFF1A\u77E9\u5F62\u3001\u692D\u5706\u3001\u77E2\u91CF` });
       return;
     }
     post({ type: "SELECTION", count: 2, valid: true, message: `\u5DF2\u9009\u4E2D 2 \u4E2A\u56FE\u5F62\uFF08${types.join(", ")}\uFF09` });
   }
-  function ensureVectorNode(node, parent) {
+  function extractGeometry(node) {
+    const sceneNode = node;
     if (node.type === "VECTOR") {
-      return [node, null];
+      const vn = node;
+      const vnNet = vn.vectorNetwork;
+      if (!vnNet || typeof vnNet === "symbol") {
+        throw new Error("Vector node has no accessible vectorNetwork");
+      }
+      return {
+        vectorNetwork: vnNet,
+        fills: vn.fills,
+        strokes: vn.strokes,
+        strokeWeight: vn.strokeWeight,
+        opacity: vn.opacity,
+        x: vn.x,
+        y: vn.y
+      };
     }
-    const srcIndex = parent.children.findIndex((c) => c.id === node.id);
-    const vec = figma.flatten([node], parent, srcIndex + 1);
-    vec.visible = false;
-    return [vec, vec];
+    return {
+      vectorNetwork: buildShapeVectorNetwork(node),
+      fills: sceneNode.fills,
+      strokes: sceneNode.strokes,
+      strokeWeight: sceneNode.strokeWeight,
+      opacity: sceneNode.opacity,
+      x: sceneNode.x,
+      y: sceneNode.y
+    };
+  }
+  function buildShapeVectorNetwork(node) {
+    const shape = node;
+    const w = shape.width;
+    const h = shape.height;
+    if (node.type === "RECTANGLE") {
+      return rectToVectorNetwork(w, h);
+    }
+    if (node.type === "ELLIPSE") {
+      return ellipseToVectorNetwork(w, h);
+    }
+    throw new Error(`Cannot build VectorNetwork for type: ${node.type}`);
+  }
+  function rectToVectorNetwork(w, h) {
+    const vertices = [
+      { x: 0, y: 0, strokeCap: "NONE", strokeJoin: "MITER", cornerRadius: 0, handleMirroring: "NONE" },
+      { x: w, y: 0, strokeCap: "NONE", strokeJoin: "MITER", cornerRadius: 0, handleMirroring: "NONE" },
+      { x: w, y: h, strokeCap: "NONE", strokeJoin: "MITER", cornerRadius: 0, handleMirroring: "NONE" },
+      { x: 0, y: h, strokeCap: "NONE", strokeJoin: "MITER", cornerRadius: 0, handleMirroring: "NONE" }
+    ];
+    const segments = [
+      { start: 0, end: 1, tangentStart: { x: 0, y: 0 }, tangentEnd: { x: 0, y: 0 } },
+      { start: 1, end: 2, tangentStart: { x: 0, y: 0 }, tangentEnd: { x: 0, y: 0 } },
+      { start: 2, end: 3, tangentStart: { x: 0, y: 0 }, tangentEnd: { x: 0, y: 0 } },
+      { start: 3, end: 0, tangentStart: { x: 0, y: 0 }, tangentEnd: { x: 0, y: 0 } }
+    ];
+    return {
+      vertices,
+      segments,
+      regions: [{ windingRule: "NONZERO", loops: [[0, 1, 2, 3]], fills: [] }]
+    };
+  }
+  function ellipseToVectorNetwork(w, h) {
+    const rx = w / 2;
+    const ry = h / 2;
+    const k = 0.5522847498;
+    const vertices = [
+      { x: rx, y: 0, strokeCap: "NONE", strokeJoin: "MITER", cornerRadius: 0, handleMirroring: "NONE" },
+      { x: w, y: ry, strokeCap: "NONE", strokeJoin: "MITER", cornerRadius: 0, handleMirroring: "NONE" },
+      { x: rx, y: h, strokeCap: "NONE", strokeJoin: "MITER", cornerRadius: 0, handleMirroring: "NONE" },
+      { x: 0, y: ry, strokeCap: "NONE", strokeJoin: "MITER", cornerRadius: 0, handleMirroring: "NONE" }
+    ];
+    const segments = [
+      // top → right
+      { start: 0, end: 1, tangentStart: { x: k * rx, y: 0 }, tangentEnd: { x: 0, y: -k * ry } },
+      // right → bottom
+      { start: 1, end: 2, tangentStart: { x: 0, y: k * ry }, tangentEnd: { x: -k * rx, y: 0 } },
+      // bottom → left
+      { start: 2, end: 3, tangentStart: { x: -k * rx, y: 0 }, tangentEnd: { x: 0, y: k * ry } },
+      // left → top
+      { start: 3, end: 0, tangentStart: { x: 0, y: -k * ry }, tangentEnd: { x: k * rx, y: 0 } }
+    ];
+    return {
+      vertices,
+      segments,
+      regions: [{ windingRule: "NONZERO", loops: [[0, 1, 2, 3]], fills: [] }]
+    };
   }
   async function handleBlend(options) {
     var _a;
@@ -661,25 +729,27 @@
     const parent = (_a = originalA.parent) != null ? _a : figma.currentPage;
     try {
       post({ type: "PROGRESS", current: 0, total: options.steps });
-      const [vecA, tempA] = ensureVectorNode(originalA, parent);
-      const [vecB, tempB] = ensureVectorNode(originalB, parent);
-      const intermediates = await blend({ nodeA: vecA, nodeB: vecB, parent }, options);
-      if (options.shouldGroup) {
+      const geomA = extractGeometry(originalA);
+      const geomB = extractGeometry(originalB);
+      const intermediates = await blend({
+        netA: geomA.vectorNetwork,
+        netB: geomB.vectorNetwork,
+        fillsA: geomA.fills,
+        fillsB: geomB.fills,
+        strokesA: geomA.strokes,
+        strokesB: geomB.strokes,
+        strokeWeightA: geomA.strokeWeight,
+        strokeWeightB: geomB.strokeWeight,
+        opacityA: geomA.opacity,
+        opacityB: geomB.opacity,
+        posA: { x: geomA.x, y: geomA.y },
+        posB: { x: geomB.x, y: geomB.y },
+        parent
+      }, options);
+      if (options.shouldGroup && intermediates.length > 0) {
         const allNodes = [originalA, ...intermediates, originalB];
         const group = figma.group(allNodes, parent);
         group.name = "Blend Group";
-      }
-      if (tempA) {
-        try {
-          tempA.remove();
-        } catch (_) {
-        }
-      }
-      if (tempB) {
-        try {
-          tempB.remove();
-        } catch (_) {
-        }
       }
       post({
         type: "RESULT",
