@@ -7,12 +7,13 @@ import { buildCompoundVectorNetwork } from './vector-builder'
 export interface BlendInput {
   nodeA: VectorNode
   nodeB: VectorNode
+  parent: BaseNode & ChildrenMixin
 }
 
 // Main blend function: creates and returns intermediate vector nodes.
 // Grouping is handled by the caller so original selection nodes are preserved.
 export async function blend(input: BlendInput, options: BlendOptions): Promise<VectorNode[]> {
-  const { nodeA, nodeB } = input
+  const { nodeA, nodeB, parent } = input
   const { steps, colorSpace } = options
 
   // Read geometry from both nodes
@@ -36,7 +37,6 @@ export async function blend(input: BlendInput, options: BlendOptions): Promise<V
   const intermediateCount = Math.max(0, steps - 2)
 
   const results: VectorNode[] = []
-  const parent = nodeA.parent ?? figma.currentPage
 
   for (let i = 1; i <= intermediateCount; i++) {
     const t = i / (intermediateCount + 1)

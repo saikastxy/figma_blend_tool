@@ -2,7 +2,8 @@
 
 > **版本**: v1.0  
 > **更新日期**: 2026-05-17  
-> **目标**: 在 Figma 中实现类似 Adobe Illustrator 混合（Blend）功能的插件
+> **目标**: 在 Figma 中实现类似 Adobe Illustrator 混合（Blend）功能的插件  
+> **仓库**: [github.com/saikastxy/figma_blend_tool](https://github.com/saikastxy/figma_blend_tool)
 
 ---
 

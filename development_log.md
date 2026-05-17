@@ -1,5 +1,7 @@
 # Figma Blend Plugin — Development Log
 
+> **仓库**: [github.com/saikastxy/figma_blend_tool](https://github.com/saikastxy/figma_blend_tool)
+
 ## 2026-05-17: 项目初始化与 Phase 1-4 实现
 
 ### 项目搭建
@@ -97,3 +99,37 @@
 - 形状混合 + 颜色混合 + 打组功能均可用
 - 模式：`documentAccess: "dynamic-page"`
 - 颜色空间：RGB、HSL
+
+---
+
+## 2026-05-17（续）: 步数语义变更 + 原始图形保留 + 节点引用修复
+
+### 迭代 1: 步数语义变更
+
+**需求**: 步数应代表总共可见的图形数量（含首尾原始图形），而非只计中间过渡形。
+
+**改动** (`src/blend-engine.ts` + `ui/ui.html`):
+- `steps` 现在表示总数（A + 中间 n-2 个 + B）
+- 中间过渡形数量 = `max(0, steps - 2)`
+- UI 标签改为"图形总数（含首尾）"，最小值从 1 改为 2
+
+### 迭代 2: 原始图形在分组中消失
+
+**现象**: 混合后原始图形不在 group 中 / 消失，报错 `in get_parent: The node with id "xxx" does not exist`。
+
+**原因分析**:
+1. `blend()` 内部做 `figma.group()` 时用的是 `ensureVectorNode()` 返回的矢量节点。对于非 VECTOR 类型（Rectangle 等），这是不可见的临时 `flatten()` 副本，不是原始图形。
+2. 临时副本在分组后被 `remove()` 删除，导致 group 中只剩中间过渡形。
+3. `handleBlend()` 中 `sel[0].parent` 在文档已被修改（插入中间形、删除临时节点）后才访问，节点引用可能已失效。
+
+**修复** (`code.ts` + `src/blend-engine.ts`):
+- 分组逻辑从 `blend()` 移到 `handleBlend()`，使用原始选中节点 `sel[0]` / `sel[1]` 参与分组
+- 在 `handleBlend()` 开头保存 `originalA`、`originalB`、`parent` 引用，后续不再访问 `.parent`
+- `parent` 通过参数显式传入 `ensureVectorNode()` 和 `blend()`，消除对节点 `.parent` 的依赖
+- 临时节点清理移到分组之后，并用 try-catch 包裹防止二次删除报错
+- `blend()` 不再返回 `BlendOutput`，改为直接返回 `VectorNode[]`
+
+### 项目仓库信息
+
+- **GitHub**: [github.com/saikastxy/figma_blend_tool](https://github.com/saikastxy/figma_blend_tool)
+- **SSH**: `git@github.com:saikastxy/figma_blend_tool.git`

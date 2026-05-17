@@ -510,8 +510,7 @@
 
   // src/blend-engine.ts
   async function blend(input, options) {
-    var _a;
-    const { nodeA, nodeB } = input;
+    const { nodeA, nodeB, parent } = input;
     const { steps, colorSpace } = options;
     const netA = nodeA.vectorNetwork;
     const netB = nodeB.vectorNetwork;
@@ -525,7 +524,6 @@
     }
     const intermediateCount = Math.max(0, steps - 2);
     const results = [];
-    const parent = (_a = nodeA.parent) != null ? _a : figma.currentPage;
     for (let i = 1; i <= intermediateCount; i++) {
       const t = i / (intermediateCount + 1);
       const interpolatedLoops = interpolateAllLoops(loopsA, loopsB, t);
@@ -636,14 +634,12 @@
     }
     post({ type: "SELECTION", count: 2, valid: true, message: `\u5DF2\u9009\u4E2D 2 \u4E2A\u56FE\u5F62\uFF08${types.join(", ")}\uFF09` });
   }
-  function ensureVectorNode(node) {
-    var _a;
+  function ensureVectorNode(node, parent) {
     if (node.type === "VECTOR") {
       return [node, null];
     }
-    const parent = (_a = node.parent) != null ? _a : figma.currentPage;
-    const index = parent.children.findIndex((c) => c.id === node.id);
-    const vec = figma.flatten([node], parent, index + 1);
+    const srcIndex = parent.children.findIndex((c) => c.id === node.id);
+    const vec = figma.flatten([node], parent, srcIndex + 1);
     vec.visible = false;
     return [vec, vec];
   }
@@ -660,18 +656,30 @@
       post({ type: "ERROR", message: `\u4E0D\u652F\u6301\u7684\u56FE\u5F62\u7C7B\u578B\uFF08${types.join(", ")}\uFF09` });
       return;
     }
+    const originalA = sel[0];
+    const originalB = sel[1];
+    const parent = (_a = originalA.parent) != null ? _a : figma.currentPage;
     try {
       post({ type: "PROGRESS", current: 0, total: options.steps });
-      const [vecA, tempA] = ensureVectorNode(sel[0]);
-      const [vecB, tempB] = ensureVectorNode(sel[1]);
-      const intermediates = await blend({ nodeA: vecA, nodeB: vecB }, options);
-      if (tempA) tempA.remove();
-      if (tempB) tempB.remove();
+      const [vecA, tempA] = ensureVectorNode(originalA, parent);
+      const [vecB, tempB] = ensureVectorNode(originalB, parent);
+      const intermediates = await blend({ nodeA: vecA, nodeB: vecB, parent }, options);
       if (options.shouldGroup) {
-        const parent = (_a = sel[0].parent) != null ? _a : figma.currentPage;
-        const allNodes = [sel[0], ...intermediates, sel[1]];
+        const allNodes = [originalA, ...intermediates, originalB];
         const group = figma.group(allNodes, parent);
         group.name = "Blend Group";
+      }
+      if (tempA) {
+        try {
+          tempA.remove();
+        } catch (_) {
+        }
+      }
+      if (tempB) {
+        try {
+          tempB.remove();
+        } catch (_) {
+        }
       }
       post({
         type: "RESULT",

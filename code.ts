@@ -53,17 +53,19 @@ function handleCheckSelection() {
 }
 
 // Convert a node to a VectorNode if it isn't already.
+// parent must be provided to avoid accessing .parent on potentially stale nodes.
 // Returns [vectorNode, tempNodeToCleanUp | null]
-function ensureVectorNode(node: BaseNode): [VectorNode, VectorNode | null] {
+function ensureVectorNode(
+  node: BaseNode,
+  parent: BaseNode & ChildrenMixin
+): [VectorNode, VectorNode | null] {
   if (node.type === 'VECTOR') {
     return [node as VectorNode, null]
   }
 
-  // Flatten non-vector shapes into a vector node.
-  // Place it right after the original node.
-  const parent = node.parent ?? figma.currentPage
-  const index = parent.children.findIndex((c) => c.id === node.id)
-  const vec = figma.flatten([node], parent, index + 1)
+  // Flatten non-vector shapes into a vector node placed right after the original.
+  const srcIndex = parent.children.findIndex((c) => c.id === node.id)
+  const vec = figma.flatten([node], parent, srcIndex + 1)
   vec.visible = false
   return [vec, vec]
 }
@@ -84,26 +86,30 @@ async function handleBlend(options: BlendOptions) {
     return
   }
 
+  // Save references before any document modifications to avoid stale node errors
+  const originalA = sel[0]
+  const originalB = sel[1]
+  const parent = originalA.parent ?? figma.currentPage
+
   try {
     post({ type: 'PROGRESS', current: 0, total: options.steps })
 
     // Convert non-vector shapes to vectors for geometry extraction
-    const [vecA, tempA] = ensureVectorNode(sel[0])
-    const [vecB, tempB] = ensureVectorNode(sel[1])
+    const [vecA, tempA] = ensureVectorNode(originalA, parent)
+    const [vecB, tempB] = ensureVectorNode(originalB, parent)
 
-    const intermediates = await blend({ nodeA: vecA, nodeB: vecB }, options)
+    const intermediates = await blend({ nodeA: vecA, nodeB: vecB, parent }, options)
 
-    // Clean up temporary flattened nodes (only needed for non-VECTOR types)
-    if (tempA) tempA.remove()
-    if (tempB) tempB.remove()
-
-    // Group original selection nodes with intermediates
+    // Group originals with intermediates using the saved references
     if (options.shouldGroup) {
-      const parent = sel[0].parent ?? figma.currentPage
-      const allNodes = [sel[0], ...intermediates, sel[1]]
+      const allNodes = [originalA, ...intermediates, originalB]
       const group = figma.group(allNodes, parent)
       group.name = 'Blend Group'
     }
+
+    // Clean up temporary flattened nodes AFTER grouping
+    if (tempA) { try { tempA.remove() } catch (_) { /* already removed */ } }
+    if (tempB) { try { tempB.remove() } catch (_) { /* already removed */ } }
 
     post({
       type: 'RESULT',
