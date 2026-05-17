@@ -1,0 +1,14 @@
+{
+  "name": "figma-blend-plugin",
+  "version": "1.0.0",
+  "description": "Figma plugin for blending/morphing between vector shapes — like Illustrator's Blend Tool",
+  "scripts": {
+    "build": "esbuild code.ts --bundle --outfile=code.js --target=es2017",
+    "watch": "esbuild code.ts --bundle --outfile=code.js --target=es2017 --watch"
+  },
+  "devDependencies": {
+    "@figma/plugin-typings": "^1.106.0",
+    "esbuild": "^0.25.0",
+    "typescript": "^5.7.0"
+  }
+}

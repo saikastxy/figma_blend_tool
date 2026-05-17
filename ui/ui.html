@@ -1,0 +1,297 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    font-size: 11px;
+    color: #333;
+    padding: 16px;
+    background: #fff;
+    line-height: 1.5;
+  }
+
+  h1 {
+    font-size: 13px;
+    font-weight: 600;
+    margin-bottom: 16px;
+    color: #000;
+  }
+
+  .section {
+    margin-bottom: 14px;
+  }
+
+  .section label {
+    display: block;
+    font-weight: 500;
+    margin-bottom: 6px;
+    color: #555;
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+
+  .selection-status {
+    padding: 8px 10px;
+    border-radius: 6px;
+    font-size: 11px;
+    background: #f5f5f5;
+    color: #666;
+  }
+
+  .selection-status.valid {
+    background: #e8f5e9;
+    color: #2e7d32;
+  }
+
+  .selection-status.invalid {
+    background: #fbe9e7;
+    color: #c62828;
+  }
+
+  input[type="number"] {
+    width: 100%;
+    padding: 7px 10px;
+    border: 1px solid #d0d0d0;
+    border-radius: 6px;
+    font-size: 12px;
+    font-family: inherit;
+    outline: none;
+    transition: border-color 0.15s;
+  }
+
+  input[type="number"]:focus {
+    border-color: #18a0fb;
+    box-shadow: 0 0 0 1px #18a0fb;
+  }
+
+  .radio-group {
+    display: flex;
+    gap: 8px;
+  }
+
+  .radio-label {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 6px 12px;
+    border: 1px solid #d0d0d0;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 11px;
+    transition: all 0.15s;
+  }
+
+  .radio-label:hover { border-color: #18a0fb; }
+  .radio-label input[type="radio"] { accent-color: #18a0fb; }
+  .radio-label:has(input:checked) {
+    background: #e3f2fd;
+    border-color: #18a0fb;
+    color: #1565c0;
+    font-weight: 500;
+  }
+  .radio-label input { margin: 0; }
+
+  .checkbox-label {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    cursor: pointer;
+    font-size: 11px;
+    padding: 6px 0;
+  }
+
+  .checkbox-label input[type="checkbox"] {
+    accent-color: #18a0fb;
+    width: 14px;
+    height: 14px;
+    margin: 0;
+  }
+
+  button {
+    width: 100%;
+    padding: 10px;
+    border: none;
+    border-radius: 6px;
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background-color 0.15s, opacity 0.15s;
+    font-family: inherit;
+  }
+
+  button.primary {
+    background: #18a0fb;
+    color: #fff;
+  }
+  button.primary:hover { background: #0d8ee7; }
+  button.primary:disabled {
+    background: #ccc;
+    cursor: not-allowed;
+  }
+
+  button.secondary {
+    background: #f0f0f0;
+    color: #333;
+    margin-top: 6px;
+  }
+  button.secondary:hover { background: #e0e0e0; }
+
+  .status-bar {
+    margin-top: 14px;
+    padding: 8px 10px;
+    border-radius: 6px;
+    font-size: 10px;
+    color: #888;
+    background: #f9f9f9;
+    text-align: center;
+    min-height: 32px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .status-bar.success { color: #2e7d32; background: #e8f5e9; }
+  .status-bar.error { color: #c62828; background: #fbe9e7; }
+  .status-bar.progress { color: #1565c0; background: #e3f2fd; }
+
+  .hint {
+    font-size: 10px;
+    color: #999;
+    margin-top: 4px;
+  }
+
+  hr {
+    border: none;
+    border-top: 1px solid #eee;
+    margin: 14px 0;
+  }
+</style>
+</head>
+<body>
+
+<h1>Blend Tool</h1>
+
+<div class="section">
+  <label>选中对象</label>
+  <div id="selectionStatus" class="selection-status">等待选择...</div>
+</div>
+
+<div class="section">
+  <label for="steps">混合步数</label>
+  <input type="number" id="steps" value="5" min="1" max="100" step="1">
+  <div class="hint">范围 1 - 100</div>
+</div>
+
+<div class="section">
+  <label>颜色空间</label>
+  <div class="radio-group">
+    <label class="radio-label">
+      <input type="radio" name="colorSpace" value="RGB">
+      RGB
+    </label>
+    <label class="radio-label">
+      <input type="radio" name="colorSpace" value="HSL" checked>
+      HSL
+    </label>
+  </div>
+</div>
+
+<div class="section">
+  <label class="checkbox-label">
+    <input type="checkbox" id="shouldGroup" checked>
+    混合后自动打组
+  </label>
+</div>
+
+<div class="section">
+  <button class="primary" id="blendBtn" disabled>执行混合</button>
+  <button class="secondary" id="refreshBtn">刷新选中状态</button>
+</div>
+
+<div id="statusBar" class="status-bar">就绪</div>
+
+<script>
+  const selectionStatus = document.getElementById('selectionStatus')
+  const statusBar = document.getElementById('statusBar')
+  const blendBtn = document.getElementById('blendBtn')
+  const stepsInput = document.getElementById('steps')
+  const shouldGroupCheck = document.getElementById('shouldGroup')
+  const refreshBtn = document.getElementById('refreshBtn')
+
+  let selectionValid = false
+
+  // Request selection state on load
+  parent.postMessage({ pluginMessage: { type: 'CHECK_SELECTION' } }, '*')
+
+  // Listen for messages from plugin main thread
+  onmessage = (event) => {
+    const msg = event.data.pluginMessage
+    if (!msg) return
+
+    switch (msg.type) {
+      case 'SELECTION':
+        selectionValid = msg.valid
+        selectionStatus.textContent = msg.message
+        selectionStatus.className = 'selection-status ' + (msg.valid ? 'valid' : 'invalid')
+        blendBtn.disabled = !msg.valid
+        setStatus('就绪')
+        break
+
+      case 'RESULT':
+        setStatus('混合完成，生成了 ' + msg.nodeCount + ' 个中间图形', 'success')
+        blendBtn.disabled = false
+        break
+
+      case 'ERROR':
+        setStatus(msg.message, 'error')
+        blendBtn.disabled = false
+        break
+
+      case 'PROGRESS':
+        setStatus('正在生成 ' + msg.current + ' / ' + msg.total + ' ...', 'progress')
+        break
+    }
+  }
+
+  blendBtn.onclick = () => {
+    if (!selectionValid) return
+
+    const steps = parseInt(stepsInput.value, 10)
+    if (isNaN(steps) || steps < 1 || steps > 100) {
+      setStatus('步数需在 1-100 之间', 'error')
+      return
+    }
+
+    const colorSpace = document.querySelector('input[name="colorSpace"]:checked').value
+    const shouldGroup = shouldGroupCheck.checked
+
+    blendBtn.disabled = true
+    setStatus('正在混合...', 'progress')
+
+    parent.postMessage({
+      pluginMessage: {
+        type: 'BLEND',
+        options: { steps, colorSpace, shouldGroup }
+      }
+    }, '*')
+  }
+
+  refreshBtn.onclick = () => {
+    parent.postMessage({ pluginMessage: { type: 'CHECK_SELECTION' } }, '*')
+    setStatus('正在检查选中状态...')
+  }
+
+  function setStatus(text, cls) {
+    statusBar.textContent = text
+    statusBar.className = 'status-bar'
+    if (cls) statusBar.classList.add(cls)
+  }
+</script>
+
+</body>
+</html>
