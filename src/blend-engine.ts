@@ -1,24 +1,19 @@
-import { BlendOptions, ColorSpace, CubicBezierLoop, NormalizedRegion } from './types'
+import { BlendOptions, CubicBezierLoop } from './types'
 import { extractLoops, normalizeLoopPair, sortLoopsByArea } from './path-normalizer'
 import { interpolateLoop, interpolatePosition } from './path-interpolator'
 import { interpolateFills, interpolateStrokes, interpolateOpacity } from './color-interpolator'
-import { matchRegions } from './region-matcher'
-import { buildVectorNetwork, buildCompoundVectorNetwork } from './vector-builder'
+import { buildCompoundVectorNetwork } from './vector-builder'
 
 export interface BlendInput {
   nodeA: VectorNode
   nodeB: VectorNode
 }
 
-export interface BlendOutput {
-  nodes: VectorNode[]
-  group: GroupNode | null
-}
-
-// Main blend function: takes two vector nodes and options, returns intermediate nodes
-export async function blend(input: BlendInput, options: BlendOptions): Promise<BlendOutput> {
+// Main blend function: creates and returns intermediate vector nodes.
+// Grouping is handled by the caller so original selection nodes are preserved.
+export async function blend(input: BlendInput, options: BlendOptions): Promise<VectorNode[]> {
   const { nodeA, nodeB } = input
-  const { steps, colorSpace, shouldGroup } = options
+  const { steps, colorSpace } = options
 
   // Read geometry from both nodes
   const netA = nodeA.vectorNetwork
@@ -36,13 +31,15 @@ export async function blend(input: BlendInput, options: BlendOptions): Promise<B
     throw new Error('Could not extract path data from one of the nodes')
   }
 
-  // For simple single-region paths, interpolate directly
-  // For multi-region paths, match and interpolate each pair
+  // steps = total count including originals (A + intermediates + B)
+  // e.g. steps=5 → 3 intermediates at t=0.25, 0.5, 0.75
+  const intermediateCount = Math.max(0, steps - 2)
+
   const results: VectorNode[] = []
   const parent = nodeA.parent ?? figma.currentPage
 
-  for (let i = 1; i <= steps; i++) {
-    const t = i / (steps + 1)
+  for (let i = 1; i <= intermediateCount; i++) {
+    const t = i / (intermediateCount + 1)
 
     // Normalize and interpolate each loop pair
     const interpolatedLoops = interpolateAllLoops(loopsA, loopsB, t)
@@ -96,15 +93,7 @@ export async function blend(input: BlendInput, options: BlendOptions): Promise<B
     results.push(vecNode)
   }
 
-  // Group if requested
-  let group: GroupNode | null = null
-  if (shouldGroup) {
-    const allNodes = [nodeA, ...results, nodeB]
-    group = figma.group(allNodes, parent)
-    group.name = 'Blend Group'
-  }
-
-  return { nodes: results, group }
+  return results
 }
 
 // Interpolate all loops between two paths

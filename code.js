@@ -512,7 +512,7 @@
   async function blend(input, options) {
     var _a;
     const { nodeA, nodeB } = input;
-    const { steps, colorSpace, shouldGroup } = options;
+    const { steps, colorSpace } = options;
     const netA = nodeA.vectorNetwork;
     const netB = nodeB.vectorNetwork;
     if (!netA || !netB) {
@@ -523,10 +523,11 @@
     if (loopsA.length === 0 || loopsB.length === 0) {
       throw new Error("Could not extract path data from one of the nodes");
     }
+    const intermediateCount = Math.max(0, steps - 2);
     const results = [];
     const parent = (_a = nodeA.parent) != null ? _a : figma.currentPage;
-    for (let i = 1; i <= steps; i++) {
-      const t = i / (steps + 1);
+    for (let i = 1; i <= intermediateCount; i++) {
+      const t = i / (intermediateCount + 1);
       const interpolatedLoops = interpolateAllLoops(loopsA, loopsB, t);
       const net = buildCompoundVectorNetwork(
         interpolatedLoops,
@@ -560,13 +561,7 @@
       parent.appendChild(vecNode);
       results.push(vecNode);
     }
-    let group = null;
-    if (shouldGroup) {
-      const allNodes = [nodeA, ...results, nodeB];
-      group = figma.group(allNodes, parent);
-      group.name = "Blend Group";
-    }
-    return { nodes: results, group };
+    return results;
   }
   function interpolateAllLoops(loopsA, loopsB, t) {
     var _a, _b;
@@ -653,6 +648,7 @@
     return [vec, vec];
   }
   async function handleBlend(options) {
+    var _a;
     const sel = figma.currentPage.selection;
     if (sel.length !== 2) {
       post({ type: "ERROR", message: "\u8BF7\u9009\u4E2D 2 \u4E2A\u56FE\u5F62" });
@@ -668,15 +664,21 @@
       post({ type: "PROGRESS", current: 0, total: options.steps });
       const [vecA, tempA] = ensureVectorNode(sel[0]);
       const [vecB, tempB] = ensureVectorNode(sel[1]);
-      const result = await blend({ nodeA: vecA, nodeB: vecB }, options);
+      const intermediates = await blend({ nodeA: vecA, nodeB: vecB }, options);
       if (tempA) tempA.remove();
       if (tempB) tempB.remove();
+      if (options.shouldGroup) {
+        const parent = (_a = sel[0].parent) != null ? _a : figma.currentPage;
+        const allNodes = [sel[0], ...intermediates, sel[1]];
+        const group = figma.group(allNodes, parent);
+        group.name = "Blend Group";
+      }
       post({
         type: "RESULT",
         success: true,
-        nodeCount: result.nodes.length
+        nodeCount: intermediates.length
       });
-      figma.notify(`\u6DF7\u5408\u5B8C\u6210\uFF0C\u751F\u6210\u4E86 ${result.nodes.length} \u4E2A\u4E2D\u95F4\u56FE\u5F62`);
+      figma.notify(`\u6DF7\u5408\u5B8C\u6210\uFF0C\u751F\u6210\u4E86 ${intermediates.length} \u4E2A\u4E2D\u95F4\u56FE\u5F62`);
     } catch (err) {
       const message = err instanceof Error ? err.message : "\u6DF7\u5408\u5931\u8D25";
       post({ type: "ERROR", message });

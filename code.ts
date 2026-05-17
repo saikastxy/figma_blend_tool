@@ -87,23 +87,31 @@ async function handleBlend(options: BlendOptions) {
   try {
     post({ type: 'PROGRESS', current: 0, total: options.steps })
 
-    // Convert non-vector shapes to vectors for blending
+    // Convert non-vector shapes to vectors for geometry extraction
     const [vecA, tempA] = ensureVectorNode(sel[0])
     const [vecB, tempB] = ensureVectorNode(sel[1])
 
-    const result = await blend({ nodeA: vecA, nodeB: vecB }, options)
+    const intermediates = await blend({ nodeA: vecA, nodeB: vecB }, options)
 
-    // Clean up temporary flattened nodes
+    // Clean up temporary flattened nodes (only needed for non-VECTOR types)
     if (tempA) tempA.remove()
     if (tempB) tempB.remove()
+
+    // Group original selection nodes with intermediates
+    if (options.shouldGroup) {
+      const parent = sel[0].parent ?? figma.currentPage
+      const allNodes = [sel[0], ...intermediates, sel[1]]
+      const group = figma.group(allNodes, parent)
+      group.name = 'Blend Group'
+    }
 
     post({
       type: 'RESULT',
       success: true,
-      nodeCount: result.nodes.length,
+      nodeCount: intermediates.length,
     })
 
-    figma.notify(`混合完成，生成了 ${result.nodes.length} 个中间图形`)
+    figma.notify(`混合完成，生成了 ${intermediates.length} 个中间图形`)
   } catch (err) {
     const message = err instanceof Error ? err.message : '混合失败'
     post({ type: 'ERROR', message })

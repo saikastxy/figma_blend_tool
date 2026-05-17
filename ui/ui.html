@@ -182,9 +182,9 @@
 </div>
 
 <div class="section">
-  <label for="steps">混合步数</label>
-  <input type="number" id="steps" value="5" min="1" max="100" step="1">
-  <div class="hint">范围 1 - 100</div>
+  <label for="steps">图形总数（含首尾）</label>
+  <input type="number" id="steps" value="5" min="2" max="100" step="1">
+  <div class="hint">范围 2 - 100（含原始2个 + 中间 n-2 个）</div>
 </div>
 
 <div class="section">
@@ -262,8 +262,8 @@
     if (!selectionValid) return
 
     const steps = parseInt(stepsInput.value, 10)
-    if (isNaN(steps) || steps < 1 || steps > 100) {
-      setStatus('步数需在 1-100 之间', 'error')
+    if (isNaN(steps) || steps < 2 || steps > 100) {
+      setStatus('图形总数需在 2-100 之间', 'error')
       return
     }
 
