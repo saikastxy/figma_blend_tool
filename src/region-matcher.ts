@@ -39,7 +39,7 @@ function totalRegionArea(region: NormalizedRegion): number {
 
 function degenerateRegion(): NormalizedRegion {
   return {
-    loops: [{ segments: [] }],
+    loops: [{ segments: [], closed: true }],
     windingRule: 'NONZERO',
     fills: [],
   }

@@ -3,13 +3,13 @@ import { BlendOptions, MainMessage, UIMessage } from './src/types'
 
 // Shape types that can be blended
 const BLENDABLE_TYPES = new Set([
-  'VECTOR', 'RECTANGLE', 'ELLIPSE',
+  'VECTOR', 'RECTANGLE', 'ELLIPSE', 'LINE',
 ])
 
 // Plugin entry point: show the UI
 figma.showUI(__html__, {
   width: 320,
-  height: 360,
+  height: 400,
   title: 'Blend Tool',
 })
 
@@ -45,17 +45,48 @@ function handleCheckSelection() {
   const allBlendable = types.every((t) => BLENDABLE_TYPES.has(t))
 
   if (!allBlendable) {
-    post({ type: 'SELECTION', count: 2, valid: false, message: `不支持的图形类型（${types.join(', ')}）。支持：矩形、椭圆、矢量` })
+    post({ type: 'SELECTION', count: 2, valid: false, message: `不支持的图形类型（${types.join(', ')}）。支持：矩形、椭圆、直线、矢量` })
     return
   }
 
-  post({ type: 'SELECTION', count: 2, valid: true, message: `已选中 2 个图形（${types.join(', ')}）` })
+  // Check open/closed consistency
+  const closedA = isPathClosed(sel[0])
+  const closedB = isPathClosed(sel[1])
+  if (closedA !== closedB) {
+    post({ type: 'SELECTION', count: 2, valid: false, message: `不能混用封闭图形和未封闭图形。请选中两个封闭图形或两个未封闭图形。` })
+    return
+  }
+
+  const descA = describeNode(sel[0])
+  const descB = describeNode(sel[1])
+  post({ type: 'SELECTION', count: 2, valid: true, message: `已选中：${descA} + ${descB}` })
 }
 
-// Extract geometry from any blendable node type.
-// For VECTOR: reads vectorNetwork directly.
-// For RECTANGLE / ELLIPSE: builds VectorNetwork from shape parameters.
-// No temporary document nodes are created.
+// Detect if a node represents an open or closed path
+function isPathClosed(node: BaseNode): boolean {
+  if (node.type === 'LINE') return false
+  if (node.type === 'RECTANGLE' || node.type === 'ELLIPSE') return true
+  if (node.type === 'VECTOR') {
+    const vn = node as VectorNode
+    const net = vn.vectorNetwork
+    if (!net || typeof net === 'symbol') return true // assume closed as safe default
+    // Has regions = closed; no regions = open
+    return !!(net.regions && net.regions.length > 0)
+  }
+  return true
+}
+
+// Human-readable description of a node
+function describeNode(node: BaseNode): string {
+  const typeNames: Record<string, string> = {
+    VECTOR: '矢量', RECTANGLE: '矩形', ELLIPSE: '椭圆', LINE: '直线',
+  }
+  const typeName = typeNames[node.type] ?? node.type
+  const closed = isPathClosed(node)
+  return closed ? `[闭]${typeName}` : `[开]${typeName}`
+}
+
+// Extract geometry from any blendable node type
 function extractGeometry(node: BaseNode): {
   vectorNetwork: VectorNetwork
   fills: readonly Paint[]
@@ -95,19 +126,20 @@ function extractGeometry(node: BaseNode): {
   }
 }
 
-// Build a VectorNetwork from basic shape types (Rectangle, Ellipse)
+// Build a VectorNetwork from basic shape types
 function buildShapeVectorNetwork(node: BaseNode): VectorNetwork {
-  const shape = node as RectangleNode | EllipseNode
-  const w = shape.width
-  const h = shape.height
-
   if (node.type === 'RECTANGLE') {
-    return rectToVectorNetwork(w, h)
+    const r = node as RectangleNode
+    return rectToVectorNetwork(r.width, r.height)
   }
   if (node.type === 'ELLIPSE') {
-    return ellipseToVectorNetwork(w, h)
+    const e = node as EllipseNode
+    return ellipseToVectorNetwork(e.width, e.height)
   }
-
+  if (node.type === 'LINE') {
+    const l = node as LineNode
+    return lineToVectorNetwork(l.width, l.height)
+  }
   throw new Error(`Cannot build VectorNetwork for type: ${node.type}`)
 }
 
@@ -136,7 +168,7 @@ function rectToVectorNetwork(w: number, h: number): VectorNetwork {
 function ellipseToVectorNetwork(w: number, h: number): VectorNetwork {
   const rx = w / 2
   const ry = h / 2
-  const k = 0.5522847498 // standard bezier approximation of quarter circle
+  const k = 0.5522847498
 
   const vertices: VectorVertex[] = [
     { x: rx, y: 0, strokeCap: 'NONE', strokeJoin: 'MITER', cornerRadius: 0, handleMirroring: 'NONE' },
@@ -146,13 +178,9 @@ function ellipseToVectorNetwork(w: number, h: number): VectorNetwork {
   ]
 
   const segments: VectorSegment[] = [
-    // top → right
     { start: 0, end: 1, tangentStart: { x: k * rx, y: 0 }, tangentEnd: { x: 0, y: -k * ry } },
-    // right → bottom
     { start: 1, end: 2, tangentStart: { x: 0, y: k * ry }, tangentEnd: { x: -k * rx, y: 0 } },
-    // bottom → left
     { start: 2, end: 3, tangentStart: { x: -k * rx, y: 0 }, tangentEnd: { x: 0, y: k * ry } },
-    // left → top
     { start: 3, end: 0, tangentStart: { x: 0, y: -k * ry }, tangentEnd: { x: k * rx, y: 0 } },
   ]
 
@@ -161,6 +189,21 @@ function ellipseToVectorNetwork(w: number, h: number): VectorNetwork {
     segments,
     regions: [{ windingRule: 'NONZERO', loops: [[0, 1, 2, 3]], fills: [] }],
   }
+}
+
+function lineToVectorNetwork(w: number, h: number): VectorNetwork {
+  // Line from (0, 0) to (w, h) in local coords — open path, 2 vertices, 1 segment
+  const vertices: VectorVertex[] = [
+    { x: 0, y: 0, strokeCap: 'NONE', strokeJoin: 'MITER', cornerRadius: 0, handleMirroring: 'NONE' },
+    { x: w, y: h, strokeCap: 'NONE', strokeJoin: 'MITER', cornerRadius: 0, handleMirroring: 'NONE' },
+  ]
+
+  const segments: VectorSegment[] = [
+    { start: 0, end: 1, tangentStart: { x: 0, y: 0 }, tangentEnd: { x: 0, y: 0 } },
+  ]
+
+  // Open path: no regions
+  return { vertices, segments }
 }
 
 // Execute blend operation
@@ -176,6 +219,14 @@ async function handleBlend(options: BlendOptions) {
   const allBlendable = types.every((t) => BLENDABLE_TYPES.has(t))
   if (!allBlendable) {
     post({ type: 'ERROR', message: `不支持的图形类型（${types.join(', ')}）` })
+    return
+  }
+
+  // Reject mixing open and closed paths
+  const closedA = isPathClosed(sel[0])
+  const closedB = isPathClosed(sel[1])
+  if (closedA !== closedB) {
+    post({ type: 'ERROR', message: '不能混用封闭图形和未封闭图形。请选中两个封闭图形或两个未封闭图形。' })
     return
   }
 

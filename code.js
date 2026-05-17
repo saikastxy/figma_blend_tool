@@ -106,10 +106,14 @@
         p3: seg.p0
       });
     }
-    return { segments: reversed };
+    return { segments: reversed, closed: loop.closed };
   }
   function loopVertices(loop) {
-    return loop.segments.map((s) => s.p0);
+    const verts = loop.segments.map((s) => s.p0);
+    if (!loop.closed && loop.segments.length > 0) {
+      verts.push(loop.segments[loop.segments.length - 1].p3);
+    }
+    return verts;
   }
   function segmentParams(loop) {
     const lengths = loop.segments.map((s) => cubicBezierLength(s.p0, s.p1, s.p2, s.p3));
@@ -159,7 +163,7 @@
         si++;
       }
     }
-    return { segments: newSegments };
+    return { segments: newSegments, closed: loop.closed };
   }
   function equalizeLoops(loopA, loopB) {
     if (loopA.segments.length === 0 || loopB.segments.length === 0) {
@@ -174,11 +178,27 @@
     ];
   }
   function unifyDirection(loopA, loopB) {
+    if (!loopA.closed || !loopB.closed) return [loopA, loopB];
     const vertsA = loopVertices(loopA);
     const vertsB = loopVertices(loopB);
     const dirA = windingDirection(vertsA);
     const dirB = windingDirection(vertsB);
     if (Math.sign(dirA) !== Math.sign(dirB) && Math.abs(dirB) > EPSILON) {
+      return [loopA, reverseLoop(loopB)];
+    }
+    return [loopA, loopB];
+  }
+  function matchOpenPathEndpoints(loopA, loopB) {
+    if (loopA.segments.length === 0 || loopB.segments.length === 0) {
+      return [loopA, loopB];
+    }
+    const aStart = loopA.segments[0].p0;
+    const aEnd = loopA.segments[loopA.segments.length - 1].p3;
+    const bStart = loopB.segments[0].p0;
+    const bEnd = loopB.segments[loopB.segments.length - 1].p3;
+    const forwardDist = distSq(aStart, bStart) + distSq(aEnd, bEnd);
+    const reversedDist = distSq(aStart, bEnd) + distSq(aEnd, bStart);
+    if (reversedDist < forwardDist) {
       return [loopA, reverseLoop(loopB)];
     }
     return [loopA, loopB];
@@ -190,7 +210,7 @@
         for (const loop of region.loops) {
           const bezierSegs2 = loopToBezierSegments(vertices, segments, [...loop]);
           if (bezierSegs2.length > 0) {
-            allLoops.push({ segments: bezierSegs2 });
+            allLoops.push({ segments: bezierSegs2, closed: true });
           }
         }
       }
@@ -198,7 +218,15 @@
     }
     const orderedSegIndices = traceSegments(segments);
     const bezierSegs = loopToBezierSegments(vertices, segments, orderedSegIndices);
-    return bezierSegs.length > 0 ? [{ segments: bezierSegs }] : [];
+    if (bezierSegs.length === 0) return [];
+    const closed = isPathClosed(segments, orderedSegIndices);
+    return [{ segments: bezierSegs, closed }];
+  }
+  function isPathClosed(segments, orderedIndices) {
+    if (orderedIndices.length === 0) return false;
+    const firstStart = segments[orderedIndices[0]].start;
+    const lastEnd = segments[orderedIndices[orderedIndices.length - 1]].end;
+    return firstStart === lastEnd;
   }
   function loopToBezierSegments(vertices, segments, loop) {
     const result = [];
@@ -237,6 +265,10 @@
     return [...loops].sort((a, b) => loopArea(b) - loopArea(a));
   }
   function normalizeLoopPair(loopA, loopB) {
+    if (!loopA.closed || !loopB.closed) {
+      const [matchedA, matchedB] = matchOpenPathEndpoints(loopA, loopB);
+      return equalizeLoops(matchedA, matchedB);
+    }
     const [dirA, dirB] = unifyDirection(loopA, loopB);
     return equalizeLoops(dirA, dirB);
   }
@@ -256,7 +288,7 @@
     for (let i = 0; i < n; i++) {
       segments.push(interpolateSegment(loopA.segments[i], loopB.segments[i], t));
     }
-    return { segments };
+    return { segments, closed: loopA.closed };
   }
   function interpolatePosition(posA, posB, t) {
     return {
@@ -400,51 +432,71 @@
   }
 
   // src/vector-builder.ts
+  function makeVertex(x, y) {
+    return {
+      x,
+      y,
+      strokeCap: "NONE",
+      strokeJoin: "MITER",
+      cornerRadius: 0,
+      handleMirroring: "NONE"
+    };
+  }
   function buildVectorNetwork(loop) {
     const N = loop.segments.length;
     if (N === 0) {
       return { vertices: [], segments: [], regions: [] };
     }
+    if (loop.closed) {
+      return buildClosedNetwork(loop);
+    }
+    return buildOpenNetwork(loop);
+  }
+  function buildClosedNetwork(loop) {
+    const N = loop.segments.length;
     const vertices = [];
     const segments = [];
     for (let i = 0; i < N; i++) {
-      const seg = loop.segments[i];
-      vertices.push({
-        x: seg.p0.x,
-        y: seg.p0.y,
-        strokeCap: "NONE",
-        strokeJoin: "MITER",
-        cornerRadius: 0,
-        handleMirroring: "NONE"
-      });
+      vertices.push(makeVertex(loop.segments[i].p0.x, loop.segments[i].p0.y));
     }
     for (let i = 0; i < N; i++) {
       const seg = loop.segments[i];
-      const endIdx = (i + 1) % N;
       segments.push({
         start: i,
-        end: endIdx,
-        tangentStart: {
-          x: seg.p1.x - seg.p0.x,
-          y: seg.p1.y - seg.p0.y
-        },
-        tangentEnd: {
-          x: seg.p2.x - seg.p3.x,
-          y: seg.p2.y - seg.p3.y
-        }
+        end: (i + 1) % N,
+        tangentStart: { x: seg.p1.x - seg.p0.x, y: seg.p1.y - seg.p0.y },
+        tangentEnd: { x: seg.p2.x - seg.p3.x, y: seg.p2.y - seg.p3.y }
       });
     }
     return {
       vertices,
       segments,
-      regions: [
-        {
-          windingRule: "NONZERO",
-          loops: [segments.map((_, i) => i)],
-          fills: []
-        }
-      ]
+      regions: [{
+        windingRule: "NONZERO",
+        loops: [segments.map((_, i) => i)],
+        fills: []
+      }]
     };
+  }
+  function buildOpenNetwork(loop) {
+    const N = loop.segments.length;
+    const vertices = [];
+    const segments = [];
+    for (let i = 0; i < N; i++) {
+      vertices.push(makeVertex(loop.segments[i].p0.x, loop.segments[i].p0.y));
+    }
+    const last = loop.segments[N - 1];
+    vertices.push(makeVertex(last.p3.x, last.p3.y));
+    for (let i = 0; i < N; i++) {
+      const seg = loop.segments[i];
+      segments.push({
+        start: i,
+        end: i + 1,
+        tangentStart: { x: seg.p1.x - seg.p0.x, y: seg.p1.y - seg.p0.y },
+        tangentEnd: { x: seg.p2.x - seg.p3.x, y: seg.p2.y - seg.p3.y }
+      });
+    }
+    return { vertices, segments };
   }
   function buildCompoundVectorNetwork(loops, windingRules = []) {
     var _a;
@@ -454,6 +506,7 @@
     if (loops.length === 1) {
       return buildVectorNetwork(loops[0]);
     }
+    const closed = loops[0].closed;
     const allVertices = [];
     const allSegments = [];
     const regionLoops = [];
@@ -462,49 +515,51 @@
       const loop = loops[li];
       const N = loop.segments.length;
       if (N === 0) continue;
-      for (let i = 0; i < N; i++) {
-        const seg = loop.segments[i];
-        allVertices.push({
-          x: seg.p0.x,
-          y: seg.p0.y,
-          strokeCap: "NONE",
-          strokeJoin: "MITER",
-          cornerRadius: 0,
-          handleMirroring: "NONE"
-        });
+      if (closed) {
+        for (let i = 0; i < N; i++) {
+          allVertices.push(makeVertex(loop.segments[i].p0.x, loop.segments[i].p0.y));
+        }
+        const loopSegIndices = [];
+        for (let i = 0; i < N; i++) {
+          const seg = loop.segments[i];
+          allSegments.push({
+            start: vertexOffset + i,
+            end: vertexOffset + (i + 1) % N,
+            tangentStart: { x: seg.p1.x - seg.p0.x, y: seg.p1.y - seg.p0.y },
+            tangentEnd: { x: seg.p2.x - seg.p3.x, y: seg.p2.y - seg.p3.y }
+          });
+          loopSegIndices.push(allSegments.length - 1);
+        }
+        regionLoops.push(loopSegIndices);
+        vertexOffset += N;
+      } else {
+        for (let i = 0; i < N; i++) {
+          allVertices.push(makeVertex(loop.segments[i].p0.x, loop.segments[i].p0.y));
+        }
+        allVertices.push(makeVertex(loop.segments[N - 1].p3.x, loop.segments[N - 1].p3.y));
+        for (let i = 0; i < N; i++) {
+          const seg = loop.segments[i];
+          allSegments.push({
+            start: vertexOffset + i,
+            end: vertexOffset + i + 1,
+            tangentStart: { x: seg.p1.x - seg.p0.x, y: seg.p1.y - seg.p0.y },
+            tangentEnd: { x: seg.p2.x - seg.p3.x, y: seg.p2.y - seg.p3.y }
+          });
+        }
+        vertexOffset += N + 1;
       }
-      const loopSegIndices = [];
-      for (let i = 0; i < N; i++) {
-        const seg = loop.segments[i];
-        const localStart = vertexOffset + i;
-        const localEnd = vertexOffset + (i + 1) % N;
-        allSegments.push({
-          start: localStart,
-          end: localEnd,
-          tangentStart: {
-            x: seg.p1.x - seg.p0.x,
-            y: seg.p1.y - seg.p0.y
-          },
-          tangentEnd: {
-            x: seg.p2.x - seg.p3.x,
-            y: seg.p2.y - seg.p3.y
-          }
-        });
-        loopSegIndices.push(allSegments.length - 1);
-      }
-      regionLoops.push(loopSegIndices);
-      vertexOffset += N;
+    }
+    if (!closed) {
+      return { vertices: allVertices, segments: allSegments };
     }
     return {
       vertices: allVertices,
       segments: allSegments,
-      regions: [
-        {
-          windingRule: (_a = windingRules[0]) != null ? _a : "NONZERO",
-          loops: regionLoops,
-          fills: []
-        }
-      ]
+      regions: [{
+        windingRule: (_a = windingRules[0]) != null ? _a : "NONZERO",
+        loops: regionLoops,
+        fills: []
+      }]
     };
   }
 
@@ -577,7 +632,7 @@
     return result;
   }
   function emptyLoop() {
-    return { segments: [] };
+    return { segments: [], closed: true };
   }
   function getWindingRules(net) {
     var _a, _b;
@@ -588,11 +643,12 @@
   var BLENDABLE_TYPES = /* @__PURE__ */ new Set([
     "VECTOR",
     "RECTANGLE",
-    "ELLIPSE"
+    "ELLIPSE",
+    "LINE"
   ]);
   figma.showUI(__html__, {
     width: 320,
-    height: 360,
+    height: 400,
     title: "Blend Tool"
   });
   figma.ui.onmessage = (msg) => {
@@ -621,10 +677,41 @@
     const types = sel.map((n) => n.type);
     const allBlendable = types.every((t) => BLENDABLE_TYPES.has(t));
     if (!allBlendable) {
-      post({ type: "SELECTION", count: 2, valid: false, message: `\u4E0D\u652F\u6301\u7684\u56FE\u5F62\u7C7B\u578B\uFF08${types.join(", ")}\uFF09\u3002\u652F\u6301\uFF1A\u77E9\u5F62\u3001\u692D\u5706\u3001\u77E2\u91CF` });
+      post({ type: "SELECTION", count: 2, valid: false, message: `\u4E0D\u652F\u6301\u7684\u56FE\u5F62\u7C7B\u578B\uFF08${types.join(", ")}\uFF09\u3002\u652F\u6301\uFF1A\u77E9\u5F62\u3001\u692D\u5706\u3001\u76F4\u7EBF\u3001\u77E2\u91CF` });
       return;
     }
-    post({ type: "SELECTION", count: 2, valid: true, message: `\u5DF2\u9009\u4E2D 2 \u4E2A\u56FE\u5F62\uFF08${types.join(", ")}\uFF09` });
+    const closedA = isPathClosed2(sel[0]);
+    const closedB = isPathClosed2(sel[1]);
+    if (closedA !== closedB) {
+      post({ type: "SELECTION", count: 2, valid: false, message: `\u4E0D\u80FD\u6DF7\u7528\u5C01\u95ED\u56FE\u5F62\u548C\u672A\u5C01\u95ED\u56FE\u5F62\u3002\u8BF7\u9009\u4E2D\u4E24\u4E2A\u5C01\u95ED\u56FE\u5F62\u6216\u4E24\u4E2A\u672A\u5C01\u95ED\u56FE\u5F62\u3002` });
+      return;
+    }
+    const descA = describeNode(sel[0]);
+    const descB = describeNode(sel[1]);
+    post({ type: "SELECTION", count: 2, valid: true, message: `\u5DF2\u9009\u4E2D\uFF1A${descA} + ${descB}` });
+  }
+  function isPathClosed2(node) {
+    if (node.type === "LINE") return false;
+    if (node.type === "RECTANGLE" || node.type === "ELLIPSE") return true;
+    if (node.type === "VECTOR") {
+      const vn = node;
+      const net = vn.vectorNetwork;
+      if (!net || typeof net === "symbol") return true;
+      return !!(net.regions && net.regions.length > 0);
+    }
+    return true;
+  }
+  function describeNode(node) {
+    var _a;
+    const typeNames = {
+      VECTOR: "\u77E2\u91CF",
+      RECTANGLE: "\u77E9\u5F62",
+      ELLIPSE: "\u692D\u5706",
+      LINE: "\u76F4\u7EBF"
+    };
+    const typeName = (_a = typeNames[node.type]) != null ? _a : node.type;
+    const closed = isPathClosed2(node);
+    return closed ? `[\u95ED]${typeName}` : `[\u5F00]${typeName}`;
   }
   function extractGeometry(node) {
     const sceneNode = node;
@@ -655,14 +742,17 @@
     };
   }
   function buildShapeVectorNetwork(node) {
-    const shape = node;
-    const w = shape.width;
-    const h = shape.height;
     if (node.type === "RECTANGLE") {
-      return rectToVectorNetwork(w, h);
+      const r = node;
+      return rectToVectorNetwork(r.width, r.height);
     }
     if (node.type === "ELLIPSE") {
-      return ellipseToVectorNetwork(w, h);
+      const e = node;
+      return ellipseToVectorNetwork(e.width, e.height);
+    }
+    if (node.type === "LINE") {
+      const l = node;
+      return lineToVectorNetwork(l.width, l.height);
     }
     throw new Error(`Cannot build VectorNetwork for type: ${node.type}`);
   }
@@ -696,13 +786,9 @@
       { x: 0, y: ry, strokeCap: "NONE", strokeJoin: "MITER", cornerRadius: 0, handleMirroring: "NONE" }
     ];
     const segments = [
-      // top → right
       { start: 0, end: 1, tangentStart: { x: k * rx, y: 0 }, tangentEnd: { x: 0, y: -k * ry } },
-      // right → bottom
       { start: 1, end: 2, tangentStart: { x: 0, y: k * ry }, tangentEnd: { x: -k * rx, y: 0 } },
-      // bottom → left
       { start: 2, end: 3, tangentStart: { x: -k * rx, y: 0 }, tangentEnd: { x: 0, y: k * ry } },
-      // left → top
       { start: 3, end: 0, tangentStart: { x: 0, y: -k * ry }, tangentEnd: { x: k * rx, y: 0 } }
     ];
     return {
@@ -710,6 +796,16 @@
       segments,
       regions: [{ windingRule: "NONZERO", loops: [[0, 1, 2, 3]], fills: [] }]
     };
+  }
+  function lineToVectorNetwork(w, h) {
+    const vertices = [
+      { x: 0, y: 0, strokeCap: "NONE", strokeJoin: "MITER", cornerRadius: 0, handleMirroring: "NONE" },
+      { x: w, y: h, strokeCap: "NONE", strokeJoin: "MITER", cornerRadius: 0, handleMirroring: "NONE" }
+    ];
+    const segments = [
+      { start: 0, end: 1, tangentStart: { x: 0, y: 0 }, tangentEnd: { x: 0, y: 0 } }
+    ];
+    return { vertices, segments };
   }
   async function handleBlend(options) {
     var _a;
@@ -722,6 +818,12 @@
     const allBlendable = types.every((t) => BLENDABLE_TYPES.has(t));
     if (!allBlendable) {
       post({ type: "ERROR", message: `\u4E0D\u652F\u6301\u7684\u56FE\u5F62\u7C7B\u578B\uFF08${types.join(", ")}\uFF09` });
+      return;
+    }
+    const closedA = isPathClosed2(sel[0]);
+    const closedB = isPathClosed2(sel[1]);
+    if (closedA !== closedB) {
+      post({ type: "ERROR", message: "\u4E0D\u80FD\u6DF7\u7528\u5C01\u95ED\u56FE\u5F62\u548C\u672A\u5C01\u95ED\u56FE\u5F62\u3002\u8BF7\u9009\u4E2D\u4E24\u4E2A\u5C01\u95ED\u56FE\u5F62\u6216\u4E24\u4E2A\u672A\u5C01\u95ED\u56FE\u5F62\u3002" });
       return;
     }
     const originalA = sel[0];

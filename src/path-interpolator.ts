@@ -26,7 +26,7 @@ export function interpolateLoop(
   for (let i = 0; i < n; i++) {
     segments.push(interpolateSegment(loopA.segments[i], loopB.segments[i], t))
   }
-  return { segments }
+  return { segments, closed: loopA.closed }
 }
 
 // Interpolate node position

@@ -111,7 +111,7 @@ function interpolateAllLoops(
 }
 
 function emptyLoop(): CubicBezierLoop {
-  return { segments: [] }
+  return { segments: [], closed: true }
 }
 
 function getWindingRules(net: VectorNetwork): WindingRule[] {

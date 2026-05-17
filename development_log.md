@@ -151,6 +151,34 @@
 
 ---
 
+## 2026-05-17（续 3）: v0.1 — 开放路径（未封闭图形）混合支持
+
+### 新功能: 开放路径 Blending
+
+**需求**: 支持未封闭图形的混合，例如直线和开放曲线之间的过渡。
+
+**实现范围**:
+- 开放路径与开放路径之间的混合
+- 封闭路径与封闭路径之间的混合（已有）
+- 封闭/开放混用 → 明确报错提示
+
+**核心改动**:
+
+| 文件 | 改动 |
+|------|------|
+| `src/types.ts` | `CubicBezierLoop` 新增 `closed: boolean` 字段 |
+| `src/path-normalizer.ts` | `extractLoops()` 检测线段链是否闭合（首尾顶点是否相同）；`loopVertices()` 对开放路径返回 N+1 个顶点（含终点）；新增 `matchOpenPathEndpoints()` — 通过端点距离判断是否需要反转方向；`normalizeLoopPair()` 根据 `closed` 选择方向统一策略 |
+| `src/path-interpolator.ts` | `interpolateLoop()` 传播 `closed` 字段 |
+| `src/vector-builder.ts` | 开放路径构建：N+1 个顶点 + N 个线段，无 region；支持多路径复合 |
+| `src/blend-engine.ts` | `emptyLoop()` 添加 `closed` 字段 |
+| `src/region-matcher.ts` | `degenerateRegion()` 添加 `closed` 字段 |
+| `code.ts` | 新增 LINE 类型支持；`isPathClosed()` 检测开放/封闭；`lineToVectorNetwork()` 构建开放线段（2顶点1线段）；选中检查增加开放/封闭一致性验证；UI 描述增加 `[开]`/`[闭]` 前缀 |
+| `ui/ui.html` | 增加面板高度至 400px |
+
+**版本标记**: 本次提交记为 **v0.1**，与之前的功能验证提交区分。
+
+---
+
 ## 项目仓库信息
 
 - **GitHub**: [github.com/saikastxy/figma_blend_tool](https://github.com/saikastxy/figma_blend_tool)

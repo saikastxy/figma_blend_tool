@@ -1,9 +1,17 @@
 # Figma Blend Plugin — Development Plan
 
-> **版本**: v1.0  
+> **版本**: v0.1  
 > **更新日期**: 2026-05-17  
 > **目标**: 在 Figma 中实现类似 Adobe Illustrator 混合（Blend）功能的插件  
 > **仓库**: [github.com/saikastxy/figma_blend_tool](https://github.com/saikastxy/figma_blend_tool)
+
+### v0.1 已实现
+- 封闭图形混合（矩形、椭圆、矢量）— 形状 + 颜色 + 位置 + 透明度
+- 未封闭图形混合（直线、开放矢量路径）— 端点自动匹配
+- 混合后自动打组（保留原始图形）
+- RGB / HSL 颜色空间选择
+- 步数 = 总共可见图形数（含首尾）
+- 封闭/开放图形混用时会提示错误
 
 ---
 

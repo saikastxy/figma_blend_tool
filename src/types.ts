@@ -12,9 +12,10 @@ export interface CubicBezierSegment {
   p3: Vec2 // end point
 }
 
-// A closed loop of cubic bezier segments
+// A loop of cubic bezier segments (open or closed)
 export interface CubicBezierLoop {
   segments: CubicBezierSegment[]
+  closed: boolean
 }
 
 // A region groups one or more loops with shared fill
