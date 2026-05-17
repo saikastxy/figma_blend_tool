@@ -644,7 +644,9 @@
     "VECTOR",
     "RECTANGLE",
     "ELLIPSE",
-    "LINE"
+    "LINE",
+    "POLYGON",
+    "STAR"
   ]);
   figma.showUI(__html__, {
     width: 320,
@@ -677,7 +679,7 @@
     const types = sel.map((n) => n.type);
     const allBlendable = types.every((t) => BLENDABLE_TYPES.has(t));
     if (!allBlendable) {
-      post({ type: "SELECTION", count: 2, valid: false, message: `\u4E0D\u652F\u6301\u7684\u56FE\u5F62\u7C7B\u578B\uFF08${types.join(", ")}\uFF09\u3002\u652F\u6301\uFF1A\u77E9\u5F62\u3001\u692D\u5706\u3001\u76F4\u7EBF\u3001\u77E2\u91CF` });
+      post({ type: "SELECTION", count: 2, valid: false, message: `\u4E0D\u652F\u6301\u7684\u56FE\u5F62\u7C7B\u578B\uFF08${types.join(", ")}\uFF09\u3002\u652F\u6301\uFF1A\u77E9\u5F62\u3001\u692D\u5706\u3001\u591A\u8FB9\u5F62\u3001\u661F\u5F62\u3001\u76F4\u7EBF\u3001\u77E2\u91CF` });
       return;
     }
     const closedA = isPathClosed2(sel[0]);
@@ -692,7 +694,7 @@
   }
   function isPathClosed2(node) {
     if (node.type === "LINE") return false;
-    if (node.type === "RECTANGLE" || node.type === "ELLIPSE") return true;
+    if (node.type === "RECTANGLE" || node.type === "ELLIPSE" || node.type === "POLYGON" || node.type === "STAR") return true;
     if (node.type === "VECTOR") {
       const vn = node;
       const net = vn.vectorNetwork;
@@ -707,7 +709,9 @@
       VECTOR: "\u77E2\u91CF",
       RECTANGLE: "\u77E9\u5F62",
       ELLIPSE: "\u692D\u5706",
-      LINE: "\u76F4\u7EBF"
+      LINE: "\u76F4\u7EBF",
+      POLYGON: "\u591A\u8FB9\u5F62",
+      STAR: "\u661F\u5F62"
     };
     const typeName = (_a = typeNames[node.type]) != null ? _a : node.type;
     const closed = isPathClosed2(node);
@@ -753,6 +757,14 @@
     if (node.type === "LINE") {
       const l = node;
       return lineToVectorNetwork(l.width, l.height);
+    }
+    if (node.type === "POLYGON") {
+      const p = node;
+      return polygonToVectorNetwork(p.width, p.height, p.pointCount);
+    }
+    if (node.type === "STAR") {
+      const s = node;
+      return starToVectorNetwork(s.width, s.height, s.pointCount, s.innerRadius);
     }
     throw new Error(`Cannot build VectorNetwork for type: ${node.type}`);
   }
@@ -806,6 +818,50 @@
       { start: 0, end: 1, tangentStart: { x: 0, y: 0 }, tangentEnd: { x: 0, y: 0 } }
     ];
     return { vertices, segments };
+  }
+  function polygonToVectorNetwork(w, h, pointCount) {
+    const cx = w / 2;
+    const cy = h / 2;
+    const r = Math.min(cx, cy);
+    const n = Math.max(3, pointCount);
+    const vertices = [];
+    const loop = [];
+    for (let i = 0; i < n; i++) {
+      const angle = Math.PI * 2 * i / n - Math.PI / 2;
+      const x = cx + r * Math.cos(angle);
+      const y = cy + r * Math.sin(angle);
+      vertices.push({ x, y, strokeCap: "NONE", strokeJoin: "MITER", cornerRadius: 0, handleMirroring: "NONE" });
+    }
+    const segments = [];
+    for (let i = 0; i < n; i++) {
+      const j = (i + 1) % n;
+      segments.push({ start: i, end: j, tangentStart: { x: 0, y: 0 }, tangentEnd: { x: 0, y: 0 } });
+      loop.push(i);
+    }
+    return { vertices, segments, regions: [{ windingRule: "NONZERO", loops: [loop], fills: [] }] };
+  }
+  function starToVectorNetwork(w, h, pointCount, innerRadius) {
+    const cx = w / 2;
+    const cy = h / 2;
+    const outerR = Math.min(cx, cy);
+    const innerR = outerR * innerRadius;
+    const n = Math.max(3, pointCount);
+    const vertices = [];
+    const loop = [];
+    for (let i = 0; i < n * 2; i++) {
+      const angle = Math.PI * 2 * i / (n * 2) - Math.PI / 2;
+      const r = i % 2 === 0 ? outerR : innerR;
+      const x = cx + r * Math.cos(angle);
+      const y = cy + r * Math.sin(angle);
+      vertices.push({ x, y, strokeCap: "NONE", strokeJoin: "MITER", cornerRadius: 0, handleMirroring: "NONE" });
+    }
+    const segments = [];
+    for (let i = 0; i < n * 2; i++) {
+      const j = (i + 1) % (n * 2);
+      segments.push({ start: i, end: j, tangentStart: { x: 0, y: 0 }, tangentEnd: { x: 0, y: 0 } });
+      loop.push(i);
+    }
+    return { vertices, segments, regions: [{ windingRule: "NONZERO", loops: [loop], fills: [] }] };
   }
   async function handleBlend(options) {
     var _a;

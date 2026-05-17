@@ -3,7 +3,7 @@ import { BlendOptions, MainMessage, UIMessage } from './src/types'
 
 // Shape types that can be blended
 const BLENDABLE_TYPES = new Set([
-  'VECTOR', 'RECTANGLE', 'ELLIPSE', 'LINE',
+  'VECTOR', 'RECTANGLE', 'ELLIPSE', 'LINE', 'POLYGON', 'STAR',
 ])
 
 // Plugin entry point: show the UI
@@ -45,7 +45,7 @@ function handleCheckSelection() {
   const allBlendable = types.every((t) => BLENDABLE_TYPES.has(t))
 
   if (!allBlendable) {
-    post({ type: 'SELECTION', count: 2, valid: false, message: `不支持的图形类型（${types.join(', ')}）。支持：矩形、椭圆、直线、矢量` })
+    post({ type: 'SELECTION', count: 2, valid: false, message: `不支持的图形类型（${types.join(', ')}）。支持：矩形、椭圆、多边形、星形、直线、矢量` })
     return
   }
 
@@ -65,7 +65,7 @@ function handleCheckSelection() {
 // Detect if a node represents an open or closed path
 function isPathClosed(node: BaseNode): boolean {
   if (node.type === 'LINE') return false
-  if (node.type === 'RECTANGLE' || node.type === 'ELLIPSE') return true
+  if (node.type === 'RECTANGLE' || node.type === 'ELLIPSE' || node.type === 'POLYGON' || node.type === 'STAR') return true
   if (node.type === 'VECTOR') {
     const vn = node as VectorNode
     const net = vn.vectorNetwork
@@ -79,7 +79,7 @@ function isPathClosed(node: BaseNode): boolean {
 // Human-readable description of a node
 function describeNode(node: BaseNode): string {
   const typeNames: Record<string, string> = {
-    VECTOR: '矢量', RECTANGLE: '矩形', ELLIPSE: '椭圆', LINE: '直线',
+    VECTOR: '矢量', RECTANGLE: '矩形', ELLIPSE: '椭圆', LINE: '直线', POLYGON: '多边形', STAR: '星形',
   }
   const typeName = typeNames[node.type] ?? node.type
   const closed = isPathClosed(node)
@@ -139,6 +139,14 @@ function buildShapeVectorNetwork(node: BaseNode): VectorNetwork {
   if (node.type === 'LINE') {
     const l = node as LineNode
     return lineToVectorNetwork(l.width, l.height)
+  }
+  if (node.type === 'POLYGON') {
+    const p = node as PolygonNode
+    return polygonToVectorNetwork(p.width, p.height, p.pointCount)
+  }
+  if (node.type === 'STAR') {
+    const s = node as StarNode
+    return starToVectorNetwork(s.width, s.height, s.pointCount, s.innerRadius)
   }
   throw new Error(`Cannot build VectorNetwork for type: ${node.type}`)
 }
@@ -204,6 +212,60 @@ function lineToVectorNetwork(w: number, h: number): VectorNetwork {
 
   // Open path: no regions
   return { vertices, segments }
+}
+
+function polygonToVectorNetwork(w: number, h: number, pointCount: number): VectorNetwork {
+  const cx = w / 2
+  const cy = h / 2
+  const r = Math.min(cx, cy)
+  const n = Math.max(3, pointCount)
+
+  const vertices: VectorVertex[] = []
+  const loop: number[] = []
+
+  for (let i = 0; i < n; i++) {
+    const angle = (Math.PI * 2 * i) / n - Math.PI / 2
+    const x = cx + r * Math.cos(angle)
+    const y = cy + r * Math.sin(angle)
+    vertices.push({ x, y, strokeCap: 'NONE', strokeJoin: 'MITER', cornerRadius: 0, handleMirroring: 'NONE' })
+  }
+
+  const segments: VectorSegment[] = []
+  for (let i = 0; i < n; i++) {
+    const j = (i + 1) % n
+    segments.push({ start: i, end: j, tangentStart: { x: 0, y: 0 }, tangentEnd: { x: 0, y: 0 } })
+    loop.push(i)
+  }
+
+  return { vertices, segments, regions: [{ windingRule: 'NONZERO', loops: [loop], fills: [] }] }
+}
+
+function starToVectorNetwork(w: number, h: number, pointCount: number, innerRadius: number): VectorNetwork {
+  const cx = w / 2
+  const cy = h / 2
+  const outerR = Math.min(cx, cy)
+  const innerR = outerR * innerRadius
+  const n = Math.max(3, pointCount)
+
+  const vertices: VectorVertex[] = []
+  const loop: number[] = []
+
+  for (let i = 0; i < n * 2; i++) {
+    const angle = (Math.PI * 2 * i) / (n * 2) - Math.PI / 2
+    const r = i % 2 === 0 ? outerR : innerR
+    const x = cx + r * Math.cos(angle)
+    const y = cy + r * Math.sin(angle)
+    vertices.push({ x, y, strokeCap: 'NONE', strokeJoin: 'MITER', cornerRadius: 0, handleMirroring: 'NONE' })
+  }
+
+  const segments: VectorSegment[] = []
+  for (let i = 0; i < n * 2; i++) {
+    const j = (i + 1) % (n * 2)
+    segments.push({ start: i, end: j, tangentStart: { x: 0, y: 0 }, tangentEnd: { x: 0, y: 0 } })
+    loop.push(i)
+  }
+
+  return { vertices, segments, regions: [{ windingRule: 'NONZERO', loops: [loop], fills: [] }] }
 }
 
 // Execute blend operation
