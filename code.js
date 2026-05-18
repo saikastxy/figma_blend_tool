@@ -82,6 +82,31 @@
     }
     return area;
   }
+  function loopArcLength(loop) {
+    let total = 0;
+    for (const seg of loop.segments) {
+      total += cubicBezierLength(seg.p0, seg.p1, seg.p2, seg.p3);
+    }
+    return total;
+  }
+  function sampleLoopAtParam(loop, t) {
+    if (loop.segments.length === 0) return null;
+    const ct = Math.max(0, Math.min(1, t));
+    const total = loopArcLength(loop);
+    if (total < 1e-4) return __spreadValues({}, loop.segments[0].p0);
+    const targetDist = ct * total;
+    let cum = 0;
+    for (const seg of loop.segments) {
+      const segLen = cubicBezierLength(seg.p0, seg.p1, seg.p2, seg.p3);
+      if (cum + segLen >= targetDist || cum + segLen >= total - 1e-4) {
+        const localT = segLen < 1e-4 ? 0 : (targetDist - cum) / segLen;
+        return cubicBezierPoint(seg.p0, seg.p1, seg.p2, seg.p3, Math.max(0, Math.min(1, localT)));
+      }
+      cum += segLen;
+    }
+    const last = loop.segments[loop.segments.length - 1];
+    return __spreadValues({}, last.p3);
+  }
   function loopArea(loop) {
     const pts = [];
     for (const seg of loop.segments) {
@@ -578,9 +603,11 @@
       opacityB,
       posA,
       posB,
-      parent
+      parent,
+      spineLoops,
+      spineOrigin
     } = input;
-    const { steps, colorSpace } = options;
+    const { steps, colorSpace, useSpine } = options;
     const loopsA = extractLoops(netA.vertices, netA.segments, netA.regions);
     const loopsB = extractLoops(netB.vertices, netB.segments, netB.regions);
     if (loopsA.length === 0 || loopsB.length === 0) {
@@ -597,7 +624,7 @@
       );
       const vecNode = figma.createVector();
       await vecNode.setVectorNetworkAsync(net);
-      const pos = interpolatePosition(posA, posB, t);
+      const pos = useSpine && spineLoops && spineLoops.length > 0 ? computeSpinePosition(spineLoops, spineOrigin != null ? spineOrigin : { x: 0, y: 0 }, t) : interpolatePosition(posA, posB, t);
       vecNode.x = pos.x;
       vecNode.y = pos.y;
       const fills = interpolateFills(fillsA, fillsB, t, colorSpace);
@@ -610,6 +637,14 @@
       results.push(vecNode);
     }
     return results;
+  }
+  function computeSpinePosition(spineLoops, spineOrigin, t) {
+    const best = spineLoops.reduce(
+      (a, b) => a.segments.length >= b.segments.length ? a : b
+    );
+    const pt = sampleLoopAtParam(best, t);
+    if (!pt) return { x: spineOrigin.x, y: spineOrigin.y };
+    return { x: spineOrigin.x + pt.x, y: spineOrigin.y + pt.y };
   }
   function interpolateAllLoops(loopsA, loopsB, t) {
     var _a, _b;
@@ -656,7 +691,7 @@
   figma.ui.onmessage = (msg) => {
     switch (msg.type) {
       case "CHECK_SELECTION":
-        handleCheckSelection();
+        handleCheckSelection(msg.useSpine);
         break;
       case "BLEND":
         handleBlend(msg.options).catch((err) => {
@@ -670,27 +705,38 @@
         break;
     }
   };
-  function handleCheckSelection() {
+  function handleCheckSelection(useSpine = false) {
     const sel = figma.currentPage.selection;
-    if (sel.length !== 2) {
-      post({ type: "SELECTION", count: sel.length, valid: false, message: `\u8BF7\u9009\u4E2D 2 \u4E2A\u56FE\u5F62\uFF08\u5F53\u524D\u9009\u4E2D ${sel.length} \u4E2A\uFF09` });
+    const expected = useSpine ? 3 : 2;
+    if (sel.length !== expected) {
+      const hint = useSpine ? `\u8BF7\u9009\u4E2D 2 \u4E2A\u56FE\u5F62 + 1 \u6761\u810A\u67F1\u8DEF\u5F84\uFF08\u5F53\u524D\u9009\u4E2D ${sel.length} \u4E2A\uFF09` : `\u8BF7\u9009\u4E2D 2 \u4E2A\u56FE\u5F62\uFF08\u5F53\u524D\u9009\u4E2D ${sel.length} \u4E2A\uFF09`;
+      post({ type: "SELECTION", count: sel.length, valid: false, message: hint });
       return;
     }
-    const types = sel.map((n) => n.type);
+    const blendItems = sel.slice(0, 2);
+    const types = blendItems.map((n) => n.type);
     const allBlendable = types.every((t) => BLENDABLE_TYPES.has(t));
     if (!allBlendable) {
-      post({ type: "SELECTION", count: 2, valid: false, message: `\u4E0D\u652F\u6301\u7684\u56FE\u5F62\u7C7B\u578B\uFF08${types.join(", ")}\uFF09\u3002\u652F\u6301\uFF1A\u77E9\u5F62\u3001\u692D\u5706\u3001\u591A\u8FB9\u5F62\u3001\u661F\u5F62\u3001\u76F4\u7EBF\u3001\u77E2\u91CF` });
+      post({ type: "SELECTION", count: sel.length, valid: false, message: `\u4E0D\u652F\u6301\u7684\u56FE\u5F62\u7C7B\u578B\uFF08${types.join(", ")}\uFF09\u3002\u652F\u6301\uFF1A\u77E9\u5F62\u3001\u692D\u5706\u3001\u591A\u8FB9\u5F62\u3001\u661F\u5F62\u3001\u76F4\u7EBF\u3001\u77E2\u91CF` });
       return;
     }
-    const closedA = isPathClosed2(sel[0]);
-    const closedB = isPathClosed2(sel[1]);
+    const closedA = isPathClosed2(blendItems[0]);
+    const closedB = isPathClosed2(blendItems[1]);
     if (closedA !== closedB) {
-      post({ type: "SELECTION", count: 2, valid: false, message: `\u4E0D\u80FD\u6DF7\u7528\u5C01\u95ED\u56FE\u5F62\u548C\u672A\u5C01\u95ED\u56FE\u5F62\u3002\u8BF7\u9009\u4E2D\u4E24\u4E2A\u5C01\u95ED\u56FE\u5F62\u6216\u4E24\u4E2A\u672A\u5C01\u95ED\u56FE\u5F62\u3002` });
+      post({ type: "SELECTION", count: sel.length, valid: false, message: `\u4E0D\u80FD\u6DF7\u7528\u5C01\u95ED\u56FE\u5F62\u548C\u672A\u5C01\u95ED\u56FE\u5F62\u3002\u8BF7\u9009\u4E2D\u4E24\u4E2A\u5C01\u95ED\u56FE\u5F62\u6216\u4E24\u4E2A\u672A\u5C01\u95ED\u56FE\u5F62\u3002` });
       return;
     }
-    const descA = describeNode(sel[0]);
-    const descB = describeNode(sel[1]);
-    post({ type: "SELECTION", count: 2, valid: true, message: `\u5DF2\u9009\u4E2D\uFF1A${descA} + ${descB}` });
+    if (useSpine) {
+      const spineNode = sel[2];
+      if (!BLENDABLE_TYPES.has(spineNode.type)) {
+        post({ type: "SELECTION", count: sel.length, valid: false, message: `\u810A\u67F1\u8DEF\u5F84\u7C7B\u578B\u4E0D\u652F\u6301\uFF08${spineNode.type}\uFF09\u3002\u8BF7\u4F7F\u7528\u77E2\u91CF\u3001\u77E9\u5F62\u3001\u692D\u5706\u3001\u76F4\u7EBF\u7B49\u7C7B\u578B\u3002` });
+        return;
+      }
+    }
+    const descA = describeNode(blendItems[0]);
+    const descB = describeNode(blendItems[1]);
+    const spineDesc = useSpine ? ` \u2192 \u810A\u67F1: ${describeNode(sel[2])}` : "";
+    post({ type: "SELECTION", count: sel.length, valid: true, message: `\u5DF2\u9009\u4E2D\uFF1A${descA} + ${descB}${spineDesc}` });
   }
   function isPathClosed2(node) {
     if (node.type === "LINE") return false;
@@ -866,24 +912,41 @@
   async function handleBlend(options) {
     var _a;
     const sel = figma.currentPage.selection;
-    if (sel.length !== 2) {
-      post({ type: "ERROR", message: "\u8BF7\u9009\u4E2D 2 \u4E2A\u56FE\u5F62" });
+    const expected = options.useSpine ? 3 : 2;
+    if (sel.length !== expected) {
+      post({ type: "ERROR", message: options.useSpine ? "\u8BF7\u9009\u4E2D 2 \u4E2A\u56FE\u5F62 + 1 \u6761\u810A\u67F1\u8DEF\u5F84" : "\u8BF7\u9009\u4E2D 2 \u4E2A\u56FE\u5F62" });
       return;
     }
-    const types = sel.map((n) => n.type);
+    const blendNodes = [sel[0], sel[1]];
+    const types = blendNodes.map((n) => n.type);
     const allBlendable = types.every((t) => BLENDABLE_TYPES.has(t));
     if (!allBlendable) {
       post({ type: "ERROR", message: `\u4E0D\u652F\u6301\u7684\u56FE\u5F62\u7C7B\u578B\uFF08${types.join(", ")}\uFF09` });
       return;
     }
-    const closedA = isPathClosed2(sel[0]);
-    const closedB = isPathClosed2(sel[1]);
+    const closedA = isPathClosed2(blendNodes[0]);
+    const closedB = isPathClosed2(blendNodes[1]);
     if (closedA !== closedB) {
       post({ type: "ERROR", message: "\u4E0D\u80FD\u6DF7\u7528\u5C01\u95ED\u56FE\u5F62\u548C\u672A\u5C01\u95ED\u56FE\u5F62\u3002\u8BF7\u9009\u4E2D\u4E24\u4E2A\u5C01\u95ED\u56FE\u5F62\u6216\u4E24\u4E2A\u672A\u5C01\u95ED\u56FE\u5F62\u3002" });
       return;
     }
-    const originalA = sel[0];
-    const originalB = sel[1];
+    let spineLoops;
+    let spineOrigin;
+    if (options.useSpine) {
+      const spineGeom = extractGeometry(sel[2]);
+      spineLoops = extractLoops(
+        spineGeom.vectorNetwork.vertices,
+        spineGeom.vectorNetwork.segments,
+        spineGeom.vectorNetwork.regions
+      );
+      if (spineLoops.length === 0) {
+        post({ type: "ERROR", message: "\u65E0\u6CD5\u4ECE\u810A\u67F1\u8DEF\u5F84\u4E2D\u63D0\u53D6\u8DEF\u5F84\u6570\u636E" });
+        return;
+      }
+      spineOrigin = { x: spineGeom.x, y: spineGeom.y };
+    }
+    const originalA = blendNodes[0];
+    const originalB = blendNodes[1];
     const parent = (_a = originalA.parent) != null ? _a : figma.currentPage;
     try {
       post({ type: "PROGRESS", current: 0, total: options.steps });
@@ -902,7 +965,9 @@
         opacityB: geomB.opacity,
         posA: { x: geomA.x, y: geomA.y },
         posB: { x: geomB.x, y: geomB.y },
-        parent
+        parent,
+        spineLoops,
+        spineOrigin
       }, options);
       if (options.shouldGroup && intermediates.length > 0) {
         const allNodes = [originalA, ...intermediates, originalB];

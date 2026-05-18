@@ -1,5 +1,6 @@
 import { blend } from './src/blend-engine'
-import { BlendOptions, MainMessage, UIMessage } from './src/types'
+import { BlendOptions, CubicBezierLoop, MainMessage, UIMessage } from './src/types'
+import { extractLoops } from './src/path-normalizer'
 
 // Shape types that can be blended
 const BLENDABLE_TYPES = new Set([
@@ -17,7 +18,7 @@ figma.showUI(__html__, {
 figma.ui.onmessage = (msg: UIMessage) => {
   switch (msg.type) {
     case 'CHECK_SELECTION':
-      handleCheckSelection()
+      handleCheckSelection(msg.useSpine)
       break
     case 'BLEND':
       handleBlend(msg.options).catch((err) => {
@@ -33,33 +34,47 @@ figma.ui.onmessage = (msg: UIMessage) => {
 }
 
 // Check current selection and report back to UI
-function handleCheckSelection() {
+function handleCheckSelection(useSpine: boolean = false) {
   const sel = figma.currentPage.selection
+  const expected = useSpine ? 3 : 2
 
-  if (sel.length !== 2) {
-    post({ type: 'SELECTION', count: sel.length, valid: false, message: `请选中 2 个图形（当前选中 ${sel.length} 个）` })
+  if (sel.length !== expected) {
+    const hint = useSpine
+      ? `请选中 2 个图形 + 1 条脊柱路径（当前选中 ${sel.length} 个）`
+      : `请选中 2 个图形（当前选中 ${sel.length} 个）`
+    post({ type: 'SELECTION', count: sel.length, valid: false, message: hint })
     return
   }
 
-  const types = sel.map((n) => n.type)
+  const blendItems = sel.slice(0, 2)
+  const types = blendItems.map((n) => n.type)
   const allBlendable = types.every((t) => BLENDABLE_TYPES.has(t))
 
   if (!allBlendable) {
-    post({ type: 'SELECTION', count: 2, valid: false, message: `不支持的图形类型（${types.join(', ')}）。支持：矩形、椭圆、多边形、星形、直线、矢量` })
+    post({ type: 'SELECTION', count: sel.length, valid: false, message: `不支持的图形类型（${types.join(', ')}）。支持：矩形、椭圆、多边形、星形、直线、矢量` })
     return
   }
 
-  // Check open/closed consistency
-  const closedA = isPathClosed(sel[0])
-  const closedB = isPathClosed(sel[1])
+  // Check open/closed consistency for the two blend shapes
+  const closedA = isPathClosed(blendItems[0])
+  const closedB = isPathClosed(blendItems[1])
   if (closedA !== closedB) {
-    post({ type: 'SELECTION', count: 2, valid: false, message: `不能混用封闭图形和未封闭图形。请选中两个封闭图形或两个未封闭图形。` })
+    post({ type: 'SELECTION', count: sel.length, valid: false, message: `不能混用封闭图形和未封闭图形。请选中两个封闭图形或两个未封闭图形。` })
     return
   }
 
-  const descA = describeNode(sel[0])
-  const descB = describeNode(sel[1])
-  post({ type: 'SELECTION', count: 2, valid: true, message: `已选中：${descA} + ${descB}` })
+  if (useSpine) {
+    const spineNode = sel[2]
+    if (!BLENDABLE_TYPES.has(spineNode.type)) {
+      post({ type: 'SELECTION', count: sel.length, valid: false, message: `脊柱路径类型不支持（${spineNode.type}）。请使用矢量、矩形、椭圆、直线等类型。` })
+      return
+    }
+  }
+
+  const descA = describeNode(blendItems[0])
+  const descB = describeNode(blendItems[1])
+  const spineDesc = useSpine ? ` → 脊柱: ${describeNode(sel[2])}` : ''
+  post({ type: 'SELECTION', count: sel.length, valid: true, message: `已选中：${descA} + ${descB}${spineDesc}` })
 }
 
 // Detect if a node represents an open or closed path
@@ -271,13 +286,15 @@ function starToVectorNetwork(w: number, h: number, pointCount: number, innerRadi
 // Execute blend operation
 async function handleBlend(options: BlendOptions) {
   const sel = figma.currentPage.selection
+  const expected = options.useSpine ? 3 : 2
 
-  if (sel.length !== 2) {
-    post({ type: 'ERROR', message: '请选中 2 个图形' })
+  if (sel.length !== expected) {
+    post({ type: 'ERROR', message: options.useSpine ? '请选中 2 个图形 + 1 条脊柱路径' : '请选中 2 个图形' })
     return
   }
 
-  const types = sel.map((n) => n.type)
+  const blendNodes = [sel[0], sel[1]]
+  const types = blendNodes.map((n) => n.type)
   const allBlendable = types.every((t) => BLENDABLE_TYPES.has(t))
   if (!allBlendable) {
     post({ type: 'ERROR', message: `不支持的图形类型（${types.join(', ')}）` })
@@ -285,16 +302,33 @@ async function handleBlend(options: BlendOptions) {
   }
 
   // Reject mixing open and closed paths
-  const closedA = isPathClosed(sel[0])
-  const closedB = isPathClosed(sel[1])
+  const closedA = isPathClosed(blendNodes[0])
+  const closedB = isPathClosed(blendNodes[1])
   if (closedA !== closedB) {
     post({ type: 'ERROR', message: '不能混用封闭图形和未封闭图形。请选中两个封闭图形或两个未封闭图形。' })
     return
   }
 
+  // Extract spine if enabled
+  let spineLoops: CubicBezierLoop[] | undefined
+  let spineOrigin: { x: number; y: number } | undefined
+  if (options.useSpine) {
+    const spineGeom = extractGeometry(sel[2])
+    spineLoops = extractLoops(
+      spineGeom.vectorNetwork.vertices,
+      spineGeom.vectorNetwork.segments,
+      spineGeom.vectorNetwork.regions
+    )
+    if (spineLoops.length === 0) {
+      post({ type: 'ERROR', message: '无法从脊柱路径中提取路径数据' })
+      return
+    }
+    spineOrigin = { x: spineGeom.x, y: spineGeom.y }
+  }
+
   // Save original references and parent before any document modifications
-  const originalA = sel[0]
-  const originalB = sel[1]
+  const originalA = blendNodes[0]
+  const originalB = blendNodes[1]
   const parent = originalA.parent ?? figma.currentPage
 
   try {
@@ -317,6 +351,8 @@ async function handleBlend(options: BlendOptions) {
       posA: { x: geomA.x, y: geomA.y },
       posB: { x: geomB.x, y: geomB.y },
       parent,
+      spineLoops,
+      spineOrigin,
     }, options)
 
     // Group originals with intermediates

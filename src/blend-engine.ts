@@ -1,8 +1,9 @@
-import { BlendOptions, CubicBezierLoop } from './types'
+import { BlendOptions, CubicBezierLoop, Vec2 } from './types'
 import { extractLoops, normalizeLoopPair, sortLoopsByArea } from './path-normalizer'
 import { interpolateLoop, interpolatePosition } from './path-interpolator'
 import { interpolateFills, interpolateStrokes, interpolateOpacity } from './color-interpolator'
 import { buildCompoundVectorNetwork } from './vector-builder'
+import { sampleLoopAtParam } from './geometry-utils'
 
 export interface BlendInput {
   netA: VectorNetwork
@@ -18,6 +19,8 @@ export interface BlendInput {
   posA: { x: number; y: number }
   posB: { x: number; y: number }
   parent: BaseNode & ChildrenMixin
+  spineLoops?: CubicBezierLoop[]
+  spineOrigin?: { x: number; y: number }
 }
 
 // Creates intermediate vector nodes between A and B.
@@ -34,8 +37,10 @@ export async function blend(
     opacityA, opacityB,
     posA, posB,
     parent,
+    spineLoops,
+    spineOrigin,
   } = input
-  const { steps, colorSpace } = options
+  const { steps, colorSpace, useSpine } = options
 
   const loopsA = extractLoops(netA.vertices, netA.segments, netA.regions)
   const loopsB = extractLoops(netB.vertices, netB.segments, netB.regions)
@@ -62,7 +67,9 @@ export async function blend(
     const vecNode = figma.createVector()
     await vecNode.setVectorNetworkAsync(net)
 
-    const pos = interpolatePosition(posA, posB, t)
+    const pos = useSpine && spineLoops && spineLoops.length > 0
+      ? computeSpinePosition(spineLoops, spineOrigin ?? { x: 0, y: 0 }, t)
+      : interpolatePosition(posA, posB, t)
     vecNode.x = pos.x
     vecNode.y = pos.y
 
@@ -80,6 +87,20 @@ export async function blend(
   }
 
   return results
+}
+
+function computeSpinePosition(
+  spineLoops: CubicBezierLoop[],
+  spineOrigin: { x: number; y: number },
+  t: number
+): Vec2 {
+  const best = spineLoops.reduce((a, b) =>
+    a.segments.length >= b.segments.length ? a : b
+  )
+  const pt = sampleLoopAtParam(best, t)
+  if (!pt) return { x: spineOrigin.x, y: spineOrigin.y }
+  // Convert from spine local coords to document coords
+  return { x: spineOrigin.x + pt.x, y: spineOrigin.y + pt.y }
 }
 
 function interpolateAllLoops(

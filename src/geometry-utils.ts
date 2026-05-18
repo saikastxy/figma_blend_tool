@@ -113,6 +113,44 @@ export function windingDirection(vertices: Vec2[]): number {
   return area
 }
 
+// Compute total arc length of a CubicBezierLoop
+export function loopArcLength(loop: { segments: CubicBezierSegment[] }): number {
+  let total = 0
+  for (const seg of loop.segments) {
+    total += cubicBezierLength(seg.p0, seg.p1, seg.p2, seg.p3)
+  }
+  return total
+}
+
+// Sample a point on a CubicBezierLoop at arc-length parameter t (0-1)
+// Returns null if the loop has no segments
+export function sampleLoopAtParam(
+  loop: { segments: CubicBezierSegment[] },
+  t: number
+): Vec2 | null {
+  if (loop.segments.length === 0) return null
+
+  const ct = Math.max(0, Math.min(1, t))
+  const total = loopArcLength(loop)
+  if (total < 0.0001) return { ...loop.segments[0].p0 }
+
+  const targetDist = ct * total
+  let cum = 0
+
+  for (const seg of loop.segments) {
+    const segLen = cubicBezierLength(seg.p0, seg.p1, seg.p2, seg.p3)
+    if (cum + segLen >= targetDist || cum + segLen >= total - 0.0001) {
+      const localT = segLen < 0.0001 ? 0 : (targetDist - cum) / segLen
+      return cubicBezierPoint(seg.p0, seg.p1, seg.p2, seg.p3, Math.max(0, Math.min(1, localT)))
+    }
+    cum += segLen
+  }
+
+  // Fallback: return end of last segment
+  const last = loop.segments[loop.segments.length - 1]
+  return { ...last.p3 }
+}
+
 // Calculate the approximate area of a closed cubic bezier loop
 export function loopArea(loop: { segments: CubicBezierSegment[] }): number {
   // Sample each segment at several points and use shoelace

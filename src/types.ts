@@ -50,11 +50,12 @@ export interface BlendOptions {
   steps: number
   colorSpace: ColorSpace
   shouldGroup: boolean
+  useSpine: boolean
 }
 
 // Messages between UI (iframe) and main thread
 export type UIMessage =
-  | { type: 'CHECK_SELECTION' }
+  | { type: 'CHECK_SELECTION'; useSpine: boolean }
   | { type: 'BLEND'; options: BlendOptions }
   | { type: 'CANCEL' }
 

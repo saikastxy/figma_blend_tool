@@ -209,6 +209,13 @@
 </div>
 
 <div class="section">
+  <label class="checkbox-label">
+    <input type="checkbox" id="useSpine">
+    沿路径混合（需额外选中一条脊柱路径）
+  </label>
+</div>
+
+<div class="section">
   <button class="primary" id="blendBtn" disabled>执行混合</button>
   <button class="secondary" id="refreshBtn">刷新选中状态</button>
 </div>
@@ -221,12 +228,19 @@
   const blendBtn = document.getElementById('blendBtn')
   const stepsInput = document.getElementById('steps')
   const shouldGroupCheck = document.getElementById('shouldGroup')
+  const useSpineCheck = document.getElementById('useSpine')
   const refreshBtn = document.getElementById('refreshBtn')
 
   let selectionValid = false
 
+  function checkSelection() {
+    parent.postMessage({
+      pluginMessage: { type: 'CHECK_SELECTION', useSpine: useSpineCheck.checked }
+    }, '*')
+  }
+
   // Request selection state on load
-  parent.postMessage({ pluginMessage: { type: 'CHECK_SELECTION' } }, '*')
+  checkSelection()
 
   // Listen for messages from plugin main thread
   onmessage = (event) => {
@@ -269,6 +283,7 @@
 
     const colorSpace = document.querySelector('input[name="colorSpace"]:checked').value
     const shouldGroup = shouldGroupCheck.checked
+    const useSpine = useSpineCheck.checked
 
     blendBtn.disabled = true
     setStatus('正在混合...', 'progress')
@@ -276,14 +291,19 @@
     parent.postMessage({
       pluginMessage: {
         type: 'BLEND',
-        options: { steps, colorSpace, shouldGroup }
+        options: { steps, colorSpace, shouldGroup, useSpine }
       }
     }, '*')
   }
 
   refreshBtn.onclick = () => {
-    parent.postMessage({ pluginMessage: { type: 'CHECK_SELECTION' } }, '*')
+    checkSelection()
     setStatus('正在检查选中状态...')
+  }
+
+  // Re-check selection when spine toggle changes
+  useSpineCheck.onchange = () => {
+    checkSelection()
   }
 
   function setStatus(text, cls) {
