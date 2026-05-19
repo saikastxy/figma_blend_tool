@@ -1,6 +1,7 @@
 {
   "name": "Blend Tool",
   "id": "figma-blend-plugin-dev",
+  "icon": "icon.png",
   "api": "1.0.0",
   "editorType": ["figma"],
   "main": "code.js",
