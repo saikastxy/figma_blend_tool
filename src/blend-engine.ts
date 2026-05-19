@@ -3,7 +3,7 @@ import { extractLoops, normalizeLoopPair, sortLoopsByArea } from './path-normali
 import { interpolateLoop, interpolatePosition } from './path-interpolator'
 import { interpolateFills, interpolateStrokes, interpolateOpacity } from './color-interpolator'
 import { buildCompoundVectorNetwork } from './vector-builder'
-import { sampleLoopAtParam } from './geometry-utils'
+import { sampleLoopAtParam, verticesCenter, lerpVec2 } from './geometry-utils'
 
 export interface BlendInput {
   netA: VectorNetwork
@@ -52,6 +52,10 @@ export async function blend(
   // steps = total count including originals (A + intermediates + B)
   const intermediateCount = Math.max(0, steps - 2)
 
+  // Compute local centers for spine centering
+  const centerA = verticesCenter(netA.vertices)
+  const centerB = verticesCenter(netB.vertices)
+
   const results: VectorNode[] = []
 
   for (let i = 1; i <= intermediateCount; i++) {
@@ -67,8 +71,12 @@ export async function blend(
     const vecNode = figma.createVector()
     await vecNode.setVectorNetworkAsync(net)
 
+    const interpCenter = lerpVec2(centerA, centerB, t)
     const pos = useSpine && spineLoops && spineLoops.length > 0
-      ? computeSpinePosition(spineLoops, spineOrigin ?? { x: 0, y: 0 }, t)
+      ? (() => {
+          const spinePt = computeSpinePosition(spineLoops, spineOrigin ?? { x: 0, y: 0 }, t)
+          return { x: spinePt.x - interpCenter.x, y: spinePt.y - interpCenter.y }
+        })()
       : interpolatePosition(posA, posB, t)
     vecNode.x = pos.x
     vecNode.y = pos.y

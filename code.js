@@ -107,6 +107,17 @@
     const last = loop.segments[loop.segments.length - 1];
     return __spreadValues({}, last.p3);
   }
+  function verticesCenter(vertices) {
+    if (vertices.length === 0) return { x: 0, y: 0 };
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    for (const v of vertices) {
+      if (v.x < minX) minX = v.x;
+      if (v.y < minY) minY = v.y;
+      if (v.x > maxX) maxX = v.x;
+      if (v.y > maxY) maxY = v.y;
+    }
+    return { x: (minX + maxX) / 2, y: (minY + maxY) / 2 };
+  }
   function loopArea(loop) {
     const pts = [];
     for (const seg of loop.segments) {
@@ -614,6 +625,8 @@
       throw new Error("Could not extract path data from one of the nodes");
     }
     const intermediateCount = Math.max(0, steps - 2);
+    const centerA = verticesCenter(netA.vertices);
+    const centerB = verticesCenter(netB.vertices);
     const results = [];
     for (let i = 1; i <= intermediateCount; i++) {
       const t = i / (intermediateCount + 1);
@@ -624,7 +637,11 @@
       );
       const vecNode = figma.createVector();
       await vecNode.setVectorNetworkAsync(net);
-      const pos = useSpine && spineLoops && spineLoops.length > 0 ? computeSpinePosition(spineLoops, spineOrigin != null ? spineOrigin : { x: 0, y: 0 }, t) : interpolatePosition(posA, posB, t);
+      const interpCenter = lerpVec2(centerA, centerB, t);
+      const pos = useSpine && spineLoops && spineLoops.length > 0 ? (() => {
+        const spinePt = computeSpinePosition(spineLoops, spineOrigin != null ? spineOrigin : { x: 0, y: 0 }, t);
+        return { x: spinePt.x - interpCenter.x, y: spinePt.y - interpCenter.y };
+      })() : interpolatePosition(posA, posB, t);
       vecNode.x = pos.x;
       vecNode.y = pos.y;
       const fills = interpolateFills(fillsA, fillsB, t, colorSpace);
@@ -709,7 +726,7 @@
     const sel = figma.currentPage.selection;
     const expected = useSpine ? 3 : 2;
     if (sel.length !== expected) {
-      const hint = useSpine ? `\u8BF7\u9009\u4E2D 2 \u4E2A\u56FE\u5F62 + 1 \u6761\u810A\u67F1\u8DEF\u5F84\uFF08\u5F53\u524D\u9009\u4E2D ${sel.length} \u4E2A\uFF09` : `\u8BF7\u9009\u4E2D 2 \u4E2A\u56FE\u5F62\uFF08\u5F53\u524D\u9009\u4E2D ${sel.length} \u4E2A\uFF09`;
+      const hint = useSpine ? `\u8BF7\u9009\u4E2D 2 \u4E2A\u56FE\u5F62 + 1 \u6761\u8F74\u7EBF\u8DEF\u5F84\uFF08\u5F53\u524D\u9009\u4E2D ${sel.length} \u4E2A\uFF09` : `\u8BF7\u9009\u4E2D 2 \u4E2A\u56FE\u5F62\uFF08\u5F53\u524D\u9009\u4E2D ${sel.length} \u4E2A\uFF09`;
       post({ type: "SELECTION", count: sel.length, valid: false, message: hint });
       return;
     }
@@ -729,13 +746,13 @@
     if (useSpine) {
       const spineNode = sel[2];
       if (!BLENDABLE_TYPES.has(spineNode.type)) {
-        post({ type: "SELECTION", count: sel.length, valid: false, message: `\u810A\u67F1\u8DEF\u5F84\u7C7B\u578B\u4E0D\u652F\u6301\uFF08${spineNode.type}\uFF09\u3002\u8BF7\u4F7F\u7528\u77E2\u91CF\u3001\u77E9\u5F62\u3001\u692D\u5706\u3001\u76F4\u7EBF\u7B49\u7C7B\u578B\u3002` });
+        post({ type: "SELECTION", count: sel.length, valid: false, message: `\u8F74\u7EBF\u8DEF\u5F84\u7C7B\u578B\u4E0D\u652F\u6301\uFF08${spineNode.type}\uFF09\u3002\u8BF7\u4F7F\u7528\u77E2\u91CF\u3001\u77E9\u5F62\u3001\u692D\u5706\u3001\u76F4\u7EBF\u7B49\u7C7B\u578B\u3002` });
         return;
       }
     }
     const descA = describeNode(blendItems[0]);
     const descB = describeNode(blendItems[1]);
-    const spineDesc = useSpine ? ` \u2192 \u810A\u67F1: ${describeNode(sel[2])}` : "";
+    const spineDesc = useSpine ? ` \u2192 \u8F74\u7EBF: ${describeNode(sel[2])}` : "";
     post({ type: "SELECTION", count: sel.length, valid: true, message: `\u5DF2\u9009\u4E2D\uFF1A${descA} + ${descB}${spineDesc}` });
   }
   function isPathClosed2(node) {
@@ -914,7 +931,7 @@
     const sel = figma.currentPage.selection;
     const expected = options.useSpine ? 3 : 2;
     if (sel.length !== expected) {
-      post({ type: "ERROR", message: options.useSpine ? "\u8BF7\u9009\u4E2D 2 \u4E2A\u56FE\u5F62 + 1 \u6761\u810A\u67F1\u8DEF\u5F84" : "\u8BF7\u9009\u4E2D 2 \u4E2A\u56FE\u5F62" });
+      post({ type: "ERROR", message: options.useSpine ? "\u8BF7\u9009\u4E2D 2 \u4E2A\u56FE\u5F62 + 1 \u6761\u8F74\u7EBF\u8DEF\u5F84" : "\u8BF7\u9009\u4E2D 2 \u4E2A\u56FE\u5F62" });
       return;
     }
     const blendNodes = [sel[0], sel[1]];
@@ -940,7 +957,7 @@
         spineGeom.vectorNetwork.regions
       );
       if (spineLoops.length === 0) {
-        post({ type: "ERROR", message: "\u65E0\u6CD5\u4ECE\u810A\u67F1\u8DEF\u5F84\u4E2D\u63D0\u53D6\u8DEF\u5F84\u6570\u636E" });
+        post({ type: "ERROR", message: "\u65E0\u6CD5\u4ECE\u8F74\u7EBF\u8DEF\u5F84\u4E2D\u63D0\u53D6\u8DEF\u5F84\u6570\u636E" });
         return;
       }
       spineOrigin = { x: spineGeom.x, y: spineGeom.y };

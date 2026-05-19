@@ -151,6 +151,19 @@ export function sampleLoopAtParam(
   return { ...last.p3 }
 }
 
+// Compute bounding-box center of a set of vertices
+export function verticesCenter(vertices: readonly { x: number; y: number }[]): Vec2 {
+  if (vertices.length === 0) return { x: 0, y: 0 }
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity
+  for (const v of vertices) {
+    if (v.x < minX) minX = v.x
+    if (v.y < minY) minY = v.y
+    if (v.x > maxX) maxX = v.x
+    if (v.y > maxY) maxY = v.y
+  }
+  return { x: (minX + maxX) / 2, y: (minY + maxY) / 2 }
+}
+
 // Calculate the approximate area of a closed cubic bezier loop
 export function loopArea(loop: { segments: CubicBezierSegment[] }): number {
   // Sample each segment at several points and use shoelace

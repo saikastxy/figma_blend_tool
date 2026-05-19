@@ -40,7 +40,7 @@ function handleCheckSelection(useSpine: boolean = false) {
 
   if (sel.length !== expected) {
     const hint = useSpine
-      ? `请选中 2 个图形 + 1 条脊柱路径（当前选中 ${sel.length} 个）`
+      ? `请选中 2 个图形 + 1 条轴线路径（当前选中 ${sel.length} 个）`
       : `请选中 2 个图形（当前选中 ${sel.length} 个）`
     post({ type: 'SELECTION', count: sel.length, valid: false, message: hint })
     return
@@ -66,14 +66,14 @@ function handleCheckSelection(useSpine: boolean = false) {
   if (useSpine) {
     const spineNode = sel[2]
     if (!BLENDABLE_TYPES.has(spineNode.type)) {
-      post({ type: 'SELECTION', count: sel.length, valid: false, message: `脊柱路径类型不支持（${spineNode.type}）。请使用矢量、矩形、椭圆、直线等类型。` })
+      post({ type: 'SELECTION', count: sel.length, valid: false, message: `轴线路径类型不支持（${spineNode.type}）。请使用矢量、矩形、椭圆、直线等类型。` })
       return
     }
   }
 
   const descA = describeNode(blendItems[0])
   const descB = describeNode(blendItems[1])
-  const spineDesc = useSpine ? ` → 脊柱: ${describeNode(sel[2])}` : ''
+  const spineDesc = useSpine ? ` → 轴线: ${describeNode(sel[2])}` : ''
   post({ type: 'SELECTION', count: sel.length, valid: true, message: `已选中：${descA} + ${descB}${spineDesc}` })
 }
 
@@ -289,7 +289,7 @@ async function handleBlend(options: BlendOptions) {
   const expected = options.useSpine ? 3 : 2
 
   if (sel.length !== expected) {
-    post({ type: 'ERROR', message: options.useSpine ? '请选中 2 个图形 + 1 条脊柱路径' : '请选中 2 个图形' })
+    post({ type: 'ERROR', message: options.useSpine ? '请选中 2 个图形 + 1 条轴线路径' : '请选中 2 个图形' })
     return
   }
 
@@ -320,7 +320,7 @@ async function handleBlend(options: BlendOptions) {
       spineGeom.vectorNetwork.regions
     )
     if (spineLoops.length === 0) {
-      post({ type: 'ERROR', message: '无法从脊柱路径中提取路径数据' })
+      post({ type: 'ERROR', message: '无法从轴线路径中提取路径数据' })
       return
     }
     spineOrigin = { x: spineGeom.x, y: spineGeom.y }

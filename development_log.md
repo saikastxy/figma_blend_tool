@@ -183,7 +183,7 @@
 
 ### 新功能: 沿指定路径混合
 
-**需求**: 增加一个 toggle 选项，勾选后可以选择一条指定的 vector/路径作为脊柱（Spine），中间过渡图形沿该脊柱路径排列，而非在首尾图形之间直线排列。
+**需求**: 增加一个 toggle 选项，勾选后可以选择一条指定的 vector/路径作为轴线（Spine），中间过渡图形沿该轴线路径排列，而非在首尾图形之间直线排列。
 
 **实现范围**:
 
@@ -191,20 +191,38 @@
 |------|------|
 | `src/types.ts` | `BlendOptions` 新增 `useSpine: boolean`；`UIMessage` 的 `CHECK_SELECTION` 携带 `useSpine` 标志 |
 | `src/geometry-utils.ts` | 新增 `loopArcLength()` — 计算 CubicBezierLoop 总弧长；新增 `sampleLoopAtParam()` — 在弧长参数 t (0-1) 处采样路径上的点 |
-| `src/blend-engine.ts` | `BlendInput` 新增 `spineLoops?` 和 `spineOrigin?`；`blend()` 根据 `useSpine` 选择位置计算方式：脊柱模式下调用 `computeSpinePosition()` 沿脊柱采样，否则保持原有线性插值 |
-| `code.ts` | `CHECK_SELECTION` 处理携带 `useSpine` 参数，脊柱模式下要求选中 3 个节点（2 个混合图形 + 1 条脊柱路径）；`handleBlend()` 中提取脊柱几何并传入 `blend()` |
+| `src/blend-engine.ts` | `BlendInput` 新增 `spineLoops?` 和 `spineOrigin?`；`blend()` 根据 `useSpine` 选择位置计算方式：轴线模式下调用 `computeSpinePosition()` 沿轴线采样，否则保持原有线性插值 |
+| `code.ts` | `CHECK_SELECTION` 处理携带 `useSpine` 参数，轴线模式下要求选中 3 个节点（2 个混合图形 + 1 条轴线路径）；`handleBlend()` 中提取轴线几何并传入 `blend()` |
 | `ui/ui.html` | 新增"沿路径混合"复选框；切换时自动重新检查选中状态；`CHECK_SELECTION` 和 `BLEND` 消息中传递 `useSpine` |
 
 **使用方式**:
 1. 勾选"沿路径混合"
-2. 依次选中：图形 A → 图形 B → 脊柱路径（共 3 个）
-3. 点击"执行混合"，中间图形将沿脊柱路径等距排列
+2. 依次选中：图形 A → 图形 B → 轴线路径（共 3 个）
+3. 点击"执行混合"，中间图形将沿轴线路径等距排列
 
 **技术细节**:
-- 脊柱路径的几何数据通过 `extractGeometry()` + `extractLoops()` 提取，与混合图形使用同一套路径提取管线
-- 位置采样基于弧长参数化（arc-length parameterization），确保中间图形沿脊柱均匀分布
-- 采样点从脊柱本地坐标转换到文档坐标（+ spineOrigin offset）
+- 轴线路径的几何数据通过 `extractGeometry()` + `extractLoops()` 提取，与混合图形使用同一套路径提取管线
+- 位置采样基于弧长参数化（arc-length parameterization），确保中间图形沿轴线均匀分布
+- 采样点从轴线本地坐标转换到文档坐标（+ spineOrigin offset）
 - 不勾选时行为完全不变，保持向后兼容
+
+---
+
+## 2026-05-19: v0.12 — 轴线居中对齐 + 术语变更
+
+### 术语变更: "脊柱" → "轴线"
+
+将所有 UI 提示和错误信息中的"脊柱"统一改为"轴线"，更直观易懂。
+
+### 功能修复: 轴线居中对齐
+
+**问题**: v0.11 中沿轴线混合时，中间图形的 local origin 直接放置在轴线采样点上，导致图形相对轴线偏移，不是以轴线为中轴居中排列。
+
+**修复** (`src/geometry-utils.ts` + `src/blend-engine.ts`):
+- 新增 `verticesCenter()` — 计算 VectorNetwork 顶点的包围盒中心
+- `blend()` 中计算 A/B 图形的 local 几何中心，并在每个中间步做线性插值
+- 轴线模式下，用 `轴线采样点 - 插值后的 local 中心` 作为图形位置，使图形的几何中心精确对齐轴线路径
+- 非轴线模式行为不变，保持向后兼容
 
 ---
 
