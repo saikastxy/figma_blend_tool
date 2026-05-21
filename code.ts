@@ -101,6 +101,44 @@ function describeNode(node: BaseNode): string {
   return closed ? `[闭]${typeName}` : `[开]${typeName}`
 }
 
+// Extract corner radii per vertex from any blendable node type
+function getCornerRadii(node: BaseNode): number[] {
+  if (node.type === 'VECTOR') {
+    const vn = node as VectorNode
+    const vnNet = vn.vectorNetwork
+    if (!vnNet || typeof vnNet === 'symbol') return []
+    return vnNet.vertices.map((v) => v.cornerRadius ?? 0)
+  }
+
+  if (node.type === 'RECTANGLE') {
+    const r = node as RectangleNode
+    return [r.topLeftRadius, r.topRightRadius, r.bottomRightRadius, r.bottomLeftRadius]
+  }
+
+  if (node.type === 'ELLIPSE') {
+    const e = node as EllipseNode
+    return [e.topLeftRadius, e.topRightRadius, e.bottomRightRadius, e.bottomLeftRadius]
+  }
+
+  if (node.type === 'POLYGON') {
+    const p = node as PolygonNode
+    const cr = typeof p.cornerRadius === 'number' ? p.cornerRadius : 0
+    return new Array(p.pointCount).fill(cr)
+  }
+
+  if (node.type === 'STAR') {
+    const s = node as StarNode
+    const cr = typeof s.cornerRadius === 'number' ? s.cornerRadius : 0
+    return new Array(s.pointCount * 2).fill(cr)
+  }
+
+  if (node.type === 'LINE') {
+    return [0, 0]
+  }
+
+  return []
+}
+
 // Extract geometry from any blendable node type
 function extractGeometry(node: BaseNode): {
   vectorNetwork: VectorNetwork
@@ -110,6 +148,7 @@ function extractGeometry(node: BaseNode): {
   opacity: number
   x: number
   y: number
+  cornerRadii: number[]
 } {
   const sceneNode = node as SceneNode
 
@@ -127,6 +166,7 @@ function extractGeometry(node: BaseNode): {
       opacity: vn.opacity,
       x: vn.x,
       y: vn.y,
+      cornerRadii: getCornerRadii(node),
     }
   }
 
@@ -138,6 +178,7 @@ function extractGeometry(node: BaseNode): {
     opacity: (sceneNode as MinimalBlendMixin).opacity,
     x: sceneNode.x,
     y: sceneNode.y,
+    cornerRadii: getCornerRadii(node),
   }
 }
 
@@ -350,6 +391,8 @@ async function handleBlend(options: BlendOptions) {
       opacityB: geomB.opacity,
       posA: { x: geomA.x, y: geomA.y },
       posB: { x: geomB.x, y: geomB.y },
+      cornerRadiiA: geomA.cornerRadii,
+      cornerRadiiB: geomB.cornerRadii,
       parent,
       spineLoops,
       spineOrigin,

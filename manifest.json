@@ -1,10 +1,10 @@
 {
-  "name": "Blend Tool",
-  "id": "figma-blend-plugin-dev",
-  "api": "1.0.0",
-  "editorType": ["figma"],
-  "main": "code.js",
-  "ui": "ui/ui.html",
-  "documentAccess": "dynamic-page",
-  "networkAccess": { "allowedDomains": ["none"] }
+    "name": "Blend Tool",
+    "id": "1638459482073484995",
+    "api": "1.0.0",
+    "editorType": [ "figma" ],
+    "main": "code.js",
+    "ui": "ui/ui.html",
+    "documentAccess": "dynamic-page",
+    "networkAccess": { "allowedDomains": [ "none" ] }
 }

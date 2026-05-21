@@ -226,6 +226,27 @@
 
 ---
 
+## 2026-05-21: v0.13 — 圆角半径（Corner Radius）插值
+
+### 新功能: Corner Radius 插值
+
+**需求**: 读取源图形的圆角半径（corner radius），并在中间过渡图形中进行插值。
+
+**实现范围**:
+
+| 文件 | 改动 |
+|------|------|
+| `code.ts` | 新增 `getCornerRadii()` — 从各类型节点提取每顶点圆角半径：Rectangle/Ellipse 读取四个独立圆角属性（topLeft/topRight/bottomRight/bottomLeft），Polygon/Star 读取统一 `cornerRadius`（处理 `figma.mixed` 情况），Vector 从 `vectorNetwork.vertices` 读取，Line 返回 `[0, 0]`；`extractGeometry()` 返回新增 `cornerRadii` 字段；`handleBlend()` 传递 `cornerRadiiA`/`cornerRadiiB` 给混合引擎 |
+| `src/blend-engine.ts` | `BlendInput` 新增 `cornerRadiiA: number[]` / `cornerRadiiB: number[]`；新增 `applyCornerRadii()` — 对中间 VectorNetwork 的顶点进行圆角半径线性插值；若路径等化后顶点数不变则逐顶点 lerp，否则退回 0（新顶点位于曲线平滑段，无圆角） |
+
+**技术细节**:
+- Rectangle/Ellipse 使用 `topLeftRadius` 等四个独立属性而非 `cornerRadius`（避免 `figma.mixed` 符号值问题）
+- Polygon/Star 使用 `cornerRadius` 并做 `typeof === 'number'` 检查过滤 mixed 情况
+- 当路径等化（`equalizeLoops`）改变顶点数时，新增顶点为曲线细分产生，cornerRadius 置 0
+- 当两源图形顶点数相同时（如同尺寸 Rectangle），直接逐顶点线性插值
+
+---
+
 ## 项目仓库信息
 
 - **GitHub**: [github.com/saikastxy/figma_blend_tool](https://github.com/saikastxy/figma_blend_tool)

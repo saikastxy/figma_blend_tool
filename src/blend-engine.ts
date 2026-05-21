@@ -18,6 +18,8 @@ export interface BlendInput {
   opacityB: number
   posA: { x: number; y: number }
   posB: { x: number; y: number }
+  cornerRadiiA: number[]
+  cornerRadiiB: number[]
   parent: BaseNode & ChildrenMixin
   spineLoops?: CubicBezierLoop[]
   spineOrigin?: { x: number; y: number }
@@ -36,6 +38,7 @@ export async function blend(
     strokeWeightA, strokeWeightB,
     opacityA, opacityB,
     posA, posB,
+    cornerRadiiA, cornerRadiiB,
     parent,
     spineLoops,
     spineOrigin,
@@ -67,6 +70,9 @@ export async function blend(
       interpolatedLoops,
       getWindingRules(netA)
     )
+
+    // Interpolate corner radii per vertex
+    applyCornerRadii(net, cornerRadiiA, cornerRadiiB, t)
 
     const vecNode = figma.createVector()
     await vecNode.setVectorNetworkAsync(net)
@@ -145,4 +151,28 @@ function emptyLoop(): CubicBezierLoop {
 
 function getWindingRules(net: VectorNetwork): WindingRule[] {
   return net.regions?.map((r) => r.windingRule) ?? ['NONZERO']
+}
+
+// Apply interpolated corner radii to a built VectorNetwork.
+// If vertex counts match both source arrays, lerp per-vertex.
+// Otherwise (path equalization changed vertex count), fall back to 0.
+function applyCornerRadii(
+  net: VectorNetwork,
+  radiiA: number[],
+  radiiB: number[],
+  t: number
+): void {
+  if (radiiA.length === 0 && radiiB.length === 0) return
+
+  const n = net.vertices.length
+  const matchA = n === radiiA.length
+  const matchB = n === radiiB.length
+
+  for (let i = 0; i < n; i++) {
+    const crA = i < radiiA.length ? radiiA[i] : 0
+    const crB = i < radiiB.length ? radiiB[i] : 0
+    net.vertices[i].cornerRadius = (matchA || matchB)
+      ? crA + (crB - crA) * t
+      : 0
+  }
 }

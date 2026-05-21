@@ -614,6 +614,8 @@
       opacityB,
       posA,
       posB,
+      cornerRadiiA,
+      cornerRadiiB,
       parent,
       spineLoops,
       spineOrigin
@@ -635,6 +637,7 @@
         interpolatedLoops,
         getWindingRules(netA)
       );
+      applyCornerRadii(net, cornerRadiiA, cornerRadiiB, t);
       const vecNode = figma.createVector();
       await vecNode.setVectorNetworkAsync(net);
       const interpCenter = lerpVec2(centerA, centerB, t);
@@ -689,6 +692,17 @@
   function getWindingRules(net) {
     var _a, _b;
     return (_b = (_a = net.regions) == null ? void 0 : _a.map((r) => r.windingRule)) != null ? _b : ["NONZERO"];
+  }
+  function applyCornerRadii(net, radiiA, radiiB, t) {
+    if (radiiA.length === 0 && radiiB.length === 0) return;
+    const n = net.vertices.length;
+    const matchA = n === radiiA.length;
+    const matchB = n === radiiB.length;
+    for (let i = 0; i < n; i++) {
+      const crA = i < radiiA.length ? radiiA[i] : 0;
+      const crB = i < radiiB.length ? radiiB[i] : 0;
+      net.vertices[i].cornerRadius = matchA || matchB ? crA + (crB - crA) * t : 0;
+    }
   }
 
   // code.ts
@@ -780,6 +794,39 @@
     const closed = isPathClosed2(node);
     return closed ? `[\u95ED]${typeName}` : `[\u5F00]${typeName}`;
   }
+  function getCornerRadii(node) {
+    if (node.type === "VECTOR") {
+      const vn = node;
+      const vnNet = vn.vectorNetwork;
+      if (!vnNet || typeof vnNet === "symbol") return [];
+      return vnNet.vertices.map((v) => {
+        var _a;
+        return (_a = v.cornerRadius) != null ? _a : 0;
+      });
+    }
+    if (node.type === "RECTANGLE") {
+      const r = node;
+      return [r.topLeftRadius, r.topRightRadius, r.bottomRightRadius, r.bottomLeftRadius];
+    }
+    if (node.type === "ELLIPSE") {
+      const e = node;
+      return [e.topLeftRadius, e.topRightRadius, e.bottomRightRadius, e.bottomLeftRadius];
+    }
+    if (node.type === "POLYGON") {
+      const p = node;
+      const cr = typeof p.cornerRadius === "number" ? p.cornerRadius : 0;
+      return new Array(p.pointCount).fill(cr);
+    }
+    if (node.type === "STAR") {
+      const s = node;
+      const cr = typeof s.cornerRadius === "number" ? s.cornerRadius : 0;
+      return new Array(s.pointCount * 2).fill(cr);
+    }
+    if (node.type === "LINE") {
+      return [0, 0];
+    }
+    return [];
+  }
   function extractGeometry(node) {
     const sceneNode = node;
     if (node.type === "VECTOR") {
@@ -795,7 +842,8 @@
         strokeWeight: vn.strokeWeight,
         opacity: vn.opacity,
         x: vn.x,
-        y: vn.y
+        y: vn.y,
+        cornerRadii: getCornerRadii(node)
       };
     }
     return {
@@ -805,7 +853,8 @@
       strokeWeight: sceneNode.strokeWeight,
       opacity: sceneNode.opacity,
       x: sceneNode.x,
-      y: sceneNode.y
+      y: sceneNode.y,
+      cornerRadii: getCornerRadii(node)
     };
   }
   function buildShapeVectorNetwork(node) {
@@ -982,6 +1031,8 @@
         opacityB: geomB.opacity,
         posA: { x: geomA.x, y: geomA.y },
         posB: { x: geomB.x, y: geomB.y },
+        cornerRadiiA: geomA.cornerRadii,
+        cornerRadiiB: geomB.cornerRadii,
         parent,
         spineLoops,
         spineOrigin
