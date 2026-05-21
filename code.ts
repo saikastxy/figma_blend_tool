@@ -149,6 +149,7 @@ function extractGeometry(node: BaseNode): {
   x: number
   y: number
   cornerRadii: number[]
+  starInnerRadius: number
 } {
   const sceneNode = node as SceneNode
 
@@ -167,7 +168,15 @@ function extractGeometry(node: BaseNode): {
       x: vn.x,
       y: vn.y,
       cornerRadii: getCornerRadii(node),
+      starInnerRadius: 1.0,
     }
+  }
+
+  let starInnerRadius = 1.0
+  if (node.type === 'STAR') {
+    starInnerRadius = (node as StarNode).innerRadius
+  } else if (node.type === 'POLYGON') {
+    starInnerRadius = 1.0
   }
 
   return {
@@ -179,6 +188,7 @@ function extractGeometry(node: BaseNode): {
     x: sceneNode.x,
     y: sceneNode.y,
     cornerRadii: getCornerRadii(node),
+    starInnerRadius,
   }
 }
 
@@ -393,6 +403,8 @@ async function handleBlend(options: BlendOptions) {
       posB: { x: geomB.x, y: geomB.y },
       cornerRadiiA: geomA.cornerRadii,
       cornerRadiiB: geomB.cornerRadii,
+      ratioA: geomA.starInnerRadius,
+      ratioB: geomB.starInnerRadius,
       parent,
       spineLoops,
       spineOrigin,

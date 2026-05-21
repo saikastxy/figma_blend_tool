@@ -20,6 +20,8 @@ export interface BlendInput {
   posB: { x: number; y: number }
   cornerRadiiA: number[]
   cornerRadiiB: number[]
+  ratioA: number
+  ratioB: number
   parent: BaseNode & ChildrenMixin
   spineLoops?: CubicBezierLoop[]
   spineOrigin?: { x: number; y: number }
@@ -39,6 +41,7 @@ export async function blend(
     opacityA, opacityB,
     posA, posB,
     cornerRadiiA, cornerRadiiB,
+    ratioA, ratioB,
     parent,
     spineLoops,
     spineOrigin,
@@ -73,6 +76,9 @@ export async function blend(
 
     // Interpolate corner radii per vertex
     applyCornerRadii(net, cornerRadiiA, cornerRadiiB, t)
+
+    // Adjust inner vertices for star ratio interpolation
+    applyStarRatio(net, ratioA, ratioB, t)
 
     const vecNode = figma.createVector()
     await vecNode.setVectorNetworkAsync(net)
@@ -174,5 +180,48 @@ function applyCornerRadii(
     net.vertices[i].cornerRadius = (matchA || matchB)
       ? crA + (crB - crA) * t
       : 0
+  }
+}
+
+// Adjust inner vertices of star-like intermediate shapes to match the
+// interpolated star ratio. Only active when both source shapes are stars
+// (ratio < 1.0). Inner vertices are those significantly closer to the
+// shape center; they are scaled so their distance from center equals
+// maxDistance * interpolatedRatio.
+function applyStarRatio(
+  net: VectorNetwork,
+  ratioA: number,
+  ratioB: number,
+  t: number
+): void {
+  // Only apply when both source shapes are actual stars (ratio < 1)
+  if (ratioA >= 1.0 && ratioB >= 1.0) return
+
+  const vertices = net.vertices
+  const n = vertices.length
+  if (n < 6) return // stars have at least 6 vertices (3-pointed)
+
+  // Compute center
+  let cx = 0, cy = 0
+  for (const v of vertices) { cx += v.x; cy += v.y }
+  cx /= n
+  cy /= n
+
+  // Compute distances from center
+  const distances = vertices.map((v) => Math.hypot(v.x - cx, v.y - cy))
+  const maxDist = Math.max(...distances)
+  if (maxDist < 0.001) return
+
+  const targetRatio = ratioA + (ratioB - ratioA) * t
+
+  for (let i = 0; i < n; i++) {
+    const d = distances[i]
+    // Inner vertices: closer to center than 90% of max distance
+    if (d < maxDist * 0.9) {
+      const targetDist = maxDist * targetRatio
+      const scale = d > 0.001 ? targetDist / d : 1.0
+      vertices[i].x = cx + (vertices[i].x - cx) * scale
+      vertices[i].y = cy + (vertices[i].y - cy) * scale
+    }
   }
 }

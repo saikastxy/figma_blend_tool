@@ -616,6 +616,8 @@
       posB,
       cornerRadiiA,
       cornerRadiiB,
+      ratioA,
+      ratioB,
       parent,
       spineLoops,
       spineOrigin
@@ -638,6 +640,7 @@
         getWindingRules(netA)
       );
       applyCornerRadii(net, cornerRadiiA, cornerRadiiB, t);
+      applyStarRatio(net, ratioA, ratioB, t);
       const vecNode = figma.createVector();
       await vecNode.setVectorNetworkAsync(net);
       const interpCenter = lerpVec2(centerA, centerB, t);
@@ -702,6 +705,32 @@
       const crA = i < radiiA.length ? radiiA[i] : 0;
       const crB = i < radiiB.length ? radiiB[i] : 0;
       net.vertices[i].cornerRadius = matchA || matchB ? crA + (crB - crA) * t : 0;
+    }
+  }
+  function applyStarRatio(net, ratioA, ratioB, t) {
+    if (ratioA >= 1 && ratioB >= 1) return;
+    const vertices = net.vertices;
+    const n = vertices.length;
+    if (n < 6) return;
+    let cx = 0, cy = 0;
+    for (const v of vertices) {
+      cx += v.x;
+      cy += v.y;
+    }
+    cx /= n;
+    cy /= n;
+    const distances = vertices.map((v) => Math.hypot(v.x - cx, v.y - cy));
+    const maxDist = Math.max(...distances);
+    if (maxDist < 1e-3) return;
+    const targetRatio = ratioA + (ratioB - ratioA) * t;
+    for (let i = 0; i < n; i++) {
+      const d = distances[i];
+      if (d < maxDist * 0.9) {
+        const targetDist = maxDist * targetRatio;
+        const scale = d > 1e-3 ? targetDist / d : 1;
+        vertices[i].x = cx + (vertices[i].x - cx) * scale;
+        vertices[i].y = cy + (vertices[i].y - cy) * scale;
+      }
     }
   }
 
@@ -843,8 +872,15 @@
         opacity: vn.opacity,
         x: vn.x,
         y: vn.y,
-        cornerRadii: getCornerRadii(node)
+        cornerRadii: getCornerRadii(node),
+        starInnerRadius: 1
       };
+    }
+    let starInnerRadius = 1;
+    if (node.type === "STAR") {
+      starInnerRadius = node.innerRadius;
+    } else if (node.type === "POLYGON") {
+      starInnerRadius = 1;
     }
     return {
       vectorNetwork: buildShapeVectorNetwork(node),
@@ -854,7 +890,8 @@
       opacity: sceneNode.opacity,
       x: sceneNode.x,
       y: sceneNode.y,
-      cornerRadii: getCornerRadii(node)
+      cornerRadii: getCornerRadii(node),
+      starInnerRadius
     };
   }
   function buildShapeVectorNetwork(node) {
@@ -1033,6 +1070,8 @@
         posB: { x: geomB.x, y: geomB.y },
         cornerRadiiA: geomA.cornerRadii,
         cornerRadiiB: geomB.cornerRadii,
+        ratioA: geomA.starInnerRadius,
+        ratioB: geomB.starInnerRadius,
         parent,
         spineLoops,
         spineOrigin

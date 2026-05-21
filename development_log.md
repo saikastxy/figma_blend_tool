@@ -247,6 +247,27 @@
 
 ---
 
+## 2026-05-21（续）: v0.15 — Star 圆角比率（innerRadius）插值
+
+### 新功能: Star Ratio 插值
+
+**需求**: 针对 Star 类型图形的 `innerRadius`（ratio）变量进行插值计算，使星形内凹程度在混合过程中平滑过渡。
+
+**实现范围**:
+
+| 文件 | 改动 |
+|------|------|
+| `code.ts` | `extractGeometry()` 返回新增 `starInnerRadius` 字段 — StarNode 读取 `innerRadius`（0~1），PolygonNode 及其他非星形类型默认 1.0；`handleBlend()` 传递 `ratioA`/`ratioB` 给混合引擎 |
+| `src/blend-engine.ts` | `BlendInput` 新增 `ratioA: number` / `ratioB: number`；新增 `applyStarRatio()` — 仅当两源图形均为星形（ratio < 1.0）时生效：计算中间图形顶点包围盒中心，识别距中心 < 90% 最大距离的"内顶点"，将其缩放至 `maxDist × 插值ratio` 处 |
+
+**技术细节**:
+- `innerRadius` 决定星形内顶点相对外顶点的径向距离（0 = 完全内缩至中心，1 = 无内缩/退化成正多边形）
+- 几何顶点位置插值已能在同尺寸星形间自然传导 ratio，显式 ratio 插值确保不同尺寸星形混合时内顶点径向距离 = `外半径 × 插值ratio`（而非纯绝对位置 lerp）
+- 仅当 `ratioA < 1.0` 且 `ratioB < 1.0` 时启用（两源图形均为有内凹的星形），避免对非星形（矩形/椭圆等）产生误判调整
+- 阈值 `maxDist * 0.9` 用于区分外顶点与内顶点，非星形图形的顶点距离均接近 maxDist，不会被误识别
+
+---
+
 ## 项目仓库信息
 
 - **GitHub**: [github.com/saikastxy/figma_blend_tool](https://github.com/saikastxy/figma_blend_tool)

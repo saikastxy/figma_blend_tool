@@ -8,6 +8,7 @@ A Figma plugin that blends/morphs between two vector shapes, inspired by Adobe I
 - **Color Interpolation** — fill, stroke, and opacity blending in RGB or HSL color space
 - **Position Blending** — interpolates x/y position between the two shapes
 - **Corner Radius Interpolation** — reads and interpolates corner radius values between shapes (Rectangle, Ellipse, Polygon, Star, and Vector nodes)
+- **Star Ratio Interpolation** — reads and interpolates Star inner radius (ratio) for natural star-to-star or star-to-polygon transitions
 - **Spine Blending** — blend shapes along a guide path (axis) for curved distributions, with automatic centering
 - **Auto-grouping** — optionally groups the originals and intermediates into a named group
 - **Open Path Support** — blends between open paths (lines, open vectors) in addition to closed shapes
